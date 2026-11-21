@@ -1,0 +1,245 @@
+Module Hash
+
+Block Global
+Declares
+    Algorithm_MD5    : Signed_32 = 1
+    Algorithm_SHA1   : Signed_32 = 2
+    Algorithm_SHA224 : Signed_32 = 3
+    Algorithm_SHA256 : Signed_32 = 4
+    Algorithm_SHA384 : Signed_32 = 5
+    Algorithm_SHA512 : Signed_32 = 6
+    Algorithm_FNV1A  : Signed_32 = 10
+End Global
+
+Extern Block loom_hash_md5 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_md5
+
+Extern Block loom_hash_sha1 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_sha1
+
+Extern Block loom_hash_sha224 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_sha224
+
+Extern Block loom_hash_sha256 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_sha256
+
+Extern Block loom_hash_sha384 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_sha384
+
+Extern Block loom_hash_sha512 Takes
+    Data : String
+    Mut Out : Text
+End loom_hash_sha512
+
+Extern Block loom_hash_fnv1a Takes
+    Data : String
+Produces Unsigned_64
+End loom_hash_fnv1a
+
+Extern Block loom_hmac_sha256 Takes
+    Key : String
+    Msg : String
+    Mut Out : Text
+End loom_hmac_sha256
+
+Extern Block loom_hmac_sha512 Takes
+    Key : String
+    Msg : String
+    Mut Out : Text
+End loom_hmac_sha512
+
+Extern Block loom_hmac_md5 Takes
+    Key : String
+    Msg : String
+    Mut Out : Text
+End loom_hmac_md5
+
+Extern Block loom_hmac_sha1 Takes
+    Key : String
+    Msg : String
+    Mut Out : Text
+End loom_hmac_sha1
+
+Extern Block loom_hash_file Takes
+    Algo : Signed_32
+    Path : String
+    Mut Out : Text
+Produces Signed_32
+End loom_hash_file
+
+Extern Block loom_hasher_create Takes
+    Algo : Signed_32
+Produces Unsigned_8 Pointer
+End loom_hasher_create
+
+Extern Block loom_hasher_update Takes
+    H : Unsigned_8 Pointer
+    Data : String
+End loom_hasher_update
+
+Extern Block loom_hasher_final Takes
+    H : Unsigned_8 Pointer
+    Mut Out : Text
+End loom_hasher_final
+
+Extern Block loom_hasher_free Takes
+    H : Unsigned_8 Pointer
+End loom_hasher_free
+
+Record Hasher
+    State : Unsigned_8 Pointer
+    Algo  : Signed_32
+End Hasher
+
+Block MD5 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_md5(Data, Out)
+    Give Out
+End MD5
+
+Block SHA1 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_sha1(Data, Out)
+    Give Out
+End SHA1
+
+Block SHA224 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_sha224(Data, Out)
+    Give Out
+End SHA224
+
+Block SHA256 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_sha256(Data, Out)
+    Give Out
+End SHA256
+
+Block SHA384 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_sha384(Data, Out)
+    Give Out
+End SHA384
+
+Block SHA512 Takes Data : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hash_sha512(Data, Out)
+    Give Out
+End SHA512
+
+Block FNV1a Takes Data : String Produces Unsigned_64
+Implements
+    Give loom_hash_fnv1a(Data)
+End FNV1a
+
+Block HMAC_SHA256 Takes Key : String, Message : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hmac_sha256(Key, Message, Out)
+    Give Out
+End HMAC_SHA256
+
+Block HMAC_SHA512 Takes Key : String, Message : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hmac_sha512(Key, Message, Out)
+    Give Out
+End HMAC_SHA512
+
+Block HMAC_MD5 Takes Key : String, Message : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hmac_md5(Key, Message, Out)
+    Give Out
+End HMAC_MD5
+
+Block HMAC_SHA1 Takes Key : String, Message : String Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hmac_sha1(Key, Message, Out)
+    Give Out
+End HMAC_SHA1
+
+Block File_SHA256 Takes Path : String Produces Text
+Declares
+    Out : Text
+    Status : Signed_32
+Implements
+    Status = loom_hash_file(Algorithm_SHA256, Path, Out)
+    Give Out
+End File_SHA256
+
+Block File_MD5 Takes Path : String Produces Text
+Declares
+    Out : Text
+    Status : Signed_32
+Implements
+    Status = loom_hash_file(Algorithm_MD5, Path, Out)
+    Give Out
+End File_MD5
+
+Block File_SHA1 Takes Path : String Produces Text
+Declares
+    Out : Text
+    Status : Signed_32
+Implements
+    Status = loom_hash_file(Algorithm_SHA1, Path, Out)
+    Give Out
+End File_SHA1
+
+Block File_SHA512 Takes Path : String Produces Text
+Declares
+    Out : Text
+    Status : Signed_32
+Implements
+    Status = loom_hash_file(Algorithm_SHA512, Path, Out)
+    Give Out
+End File_SHA512
+
+Block Hasher_Init Takes Algo : Signed_32 Produces Hasher
+Declares
+    H : Hasher
+Implements
+    H = Hasher{ State: loom_hasher_create(Algo), Algo: Algo }
+    Give H
+End Hasher_Init
+
+Block Hasher_Update Takes Mut H : Hasher, Chunk : String
+Implements
+    loom_hasher_update(H.State, Chunk)
+End Hasher_Update
+
+Block Hasher_Final Takes H : Hasher Produces Text
+Declares
+    Out : Text
+Implements
+    loom_hasher_final(H.State, Out)
+    loom_hasher_free(H.State)
+    Give Out
+End Hasher_Final

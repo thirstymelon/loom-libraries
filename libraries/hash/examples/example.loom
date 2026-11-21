@@ -1,0 +1,38 @@
+Module Main
+
+Import Hash
+use Hash
+
+Block Main
+Declares
+    Msg      : String = "The quick brown fox jumps over the lazy dog"
+    Sha256   : Text
+    FnvVal   : Unsigned_64
+    HmacVal  : Text
+    H        : Hasher
+    Streamed : Text
+Implements
+    Sha256 = Hash.SHA256(Msg)
+    Print("SHA-256: ")
+    Print(Sha256)
+    Print("\n")
+
+    FnvVal = Hash.FNV1a(Msg)
+    Print("FNV-1a 64-bit: ")
+    Print(FnvVal)
+    Print("\n")
+
+    HmacVal = Hash.HMAC_SHA256("secret_key", Msg)
+    Print("HMAC-SHA256: ")
+    Print(HmacVal)
+    Print("\n")
+
+    # Chunked hashing
+    H = Hasher_Init(Algorithm_SHA256)
+    Hasher_Update(H, "The quick brown fox ")
+    Hasher_Update(H, "jumps over the lazy dog")
+    Streamed = Hasher_Final(Move H)
+    Print("Streamed SHA-256: ")
+    Print(Streamed)
+    Print("\n")
+End Main

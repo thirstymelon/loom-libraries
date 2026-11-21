@@ -1,0 +1,11 @@
+# Build and test artifacts
+target/
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.bin
+*.out
+.DS_Store
+*.tar.gz

@@ -1,0 +1,29 @@
+Module Main
+
+Import Hash
+use Hash
+
+Block Main
+Declares
+    Input : String = "Hello, Loom!"
+    Digest1 : Text
+    Digest2 : Text
+    H : Hasher
+Implements
+    Digest1 = Hash.SHA256(Input)
+    
+    H = Hasher_Init(Algorithm_SHA256)
+    Hasher_Update(H, "Hello, ")
+    Hasher_Update(H, "Loom!")
+    Digest2 = Hasher_Final(Move H)
+
+    Print("Digest 1: ")
+    Print(Digest1)
+    Print("\n")
+
+    Print("Digest 2: ")
+    Print(Digest2)
+    Print("\n")
+
+    Print("Hash test completed successfully!\n")
+End Main
