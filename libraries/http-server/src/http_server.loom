@@ -1,0 +1,397 @@
+Module HttpServer
+Import Net
+Import NetAsync
+
+Record Request
+    Method : Text
+    Path : Text
+    Query : Text
+    Headers : Text
+    Body : Text
+    Remote_Ip : Text
+    Remote_Port : Signed_32
+End Request
+
+Record Response_Writer
+    Status_Code : Signed_32
+    Headers : Text
+    Body : Text
+    Is_Sent : Boolean
+End Response_Writer
+
+Record Server_Config
+    Host : Text
+    Port : Signed_32
+    Backlog : Signed_32
+    Timeout_Ms : Signed_32
+End Server_Config
+
+Record Server
+    Config : Server_Config
+    Listen_Fd : Signed_32
+    Is_Running : Boolean
+End Server
+
+Block Empty_Text Produces Text
+Declares
+    T : Text
+Implements
+    Give T
+End Empty_Text
+
+Block Res_New Produces Response_Writer
+Declares
+    Res : Response_Writer
+Implements
+    Res.Status_Code = 200
+    Res.Headers = Empty_Text()
+    Res.Body = Empty_Text()
+    Res.Is_Sent = False
+    Give Res
+End Res_New
+
+Block Res_Status Takes
+    Res : Response_Writer
+    Code : Signed_32
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out.Status_Code = Code
+    Out.Headers = Empty_Text()
+    Out.Headers += Res.Headers
+    Out.Body = Empty_Text()
+    Out.Body += Res.Body
+    Out.Is_Sent = Res.Is_Sent
+    Give Out
+End Res_Status
+
+Block Res_Header Takes
+    Res : Response_Writer
+    Name : String
+    Value : String
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out.Status_Code = Res.Status_Code
+    Out.Headers = Empty_Text()
+    Out.Headers += Res.Headers
+    Out.Headers += Name
+    Out.Headers += ": "
+    Out.Headers += Value
+    Out.Headers += "\r\n"
+    Out.Body = Empty_Text()
+    Out.Body += Res.Body
+    Out.Is_Sent = Res.Is_Sent
+    Give Out
+End Res_Header
+
+Block Res_Header_Text Takes
+    Res : Response_Writer
+    Name : String
+    Value : Text
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out.Status_Code = Res.Status_Code
+    Out.Headers = Empty_Text()
+    Out.Headers += Res.Headers
+    Out.Headers += Name
+    Out.Headers += ": "
+    Out.Headers += Value
+    Out.Headers += "\r\n"
+    Out.Body = Empty_Text()
+    Out.Body += Res.Body
+    Out.Is_Sent = Res.Is_Sent
+    Give Out
+End Res_Header_Text
+
+Block Res_Text Takes
+    Res : Response_Writer
+    Content : String
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "text/plain; charset=utf-8")
+    Out.Body += Content
+    Give Out
+End Res_Text
+
+Block Res_Text_Text Takes
+    Res : Response_Writer
+    Content : Text
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "text/plain; charset=utf-8")
+    Out.Body += Content
+    Give Out
+End Res_Text_Text
+
+Block Res_Json Takes
+    Res : Response_Writer
+    Json_Str : String
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "application/json")
+    Out.Body += Json_Str
+    Give Out
+End Res_Json
+
+Block Res_Json_Text Takes
+    Res : Response_Writer
+    Json_Str : Text
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "application/json")
+    Out.Body += Json_Str
+    Give Out
+End Res_Json_Text
+
+Block Res_Html Takes
+    Res : Response_Writer
+    Html_Str : String
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "text/html; charset=utf-8")
+    Out.Body += Html_Str
+    Give Out
+End Res_Html
+
+Block Res_Html_Text Takes
+    Res : Response_Writer
+    Html_Str : Text
+Produces Response_Writer
+Declares
+    Out : Response_Writer
+Implements
+    Out = Res_Header(Res, "Content-Type", "text/html; charset=utf-8")
+    Out.Body += Html_Str
+    Give Out
+End Res_Html_Text
+
+Block Format_Status_Line Takes
+    Code : Signed_32
+Produces Text
+Declares
+    Out : Text
+Implements
+    Out += "HTTP/1.1 "
+    Out += Code
+    If Code == 200
+        Out += " OK\r\n"
+    Else If Code == 201
+        Out += " Created\r\n"
+    Else If Code == 204
+        Out += " No Content\r\n"
+    Else If Code == 400
+        Out += " Bad Request\r\n"
+    Else If Code == 404
+        Out += " Not Found\r\n"
+    Else If Code == 405
+        Out += " Method Not Allowed\r\n"
+    Else If Code == 500
+        Out += " Internal Server Error\r\n"
+    Else
+        Out += " OK\r\n"
+    End If
+    Give Out
+End Format_Status_Line
+
+Block Res_Send Takes
+    Res : Response_Writer
+    Client_Fd : Signed_32
+Produces Signed_32
+Declares
+    Msg : Text
+    Sent : Signed_64
+    Body_Len : Unsigned_64
+Implements
+    Msg += Format_Status_Line(Res.Status_Code)
+    Msg += "Server: Loom-HttpServer/1.0\r\n"
+    Msg += "Connection: close\r\n"
+
+    Body_Len = Res.Body.Length
+    Msg += "Content-Length: "
+    Msg += Body_Len
+    Msg += "\r\n"
+
+    If Res.Headers.Length > 0
+        Msg += Res.Headers
+    End If
+    Msg += "\r\n"
+
+    If Body_Len > 0
+        Msg += Res.Body
+    End If
+
+    Sent = Net.Tcp_Send_All(Client_Fd, Msg)
+    If Sent < 0
+        Give -1
+    End If
+    Give 0
+End Res_Send
+
+Block Parse_Request Takes
+    Raw : Text
+Produces Request
+Declares
+    Req : Request
+    Len : Unsigned_64
+    I : Unsigned_64 = 1
+    Space1 : Unsigned_64 = 0
+    Space2 : Unsigned_64 = 0
+    Line1_End : Unsigned_64 = 0
+    C : Unsigned_32
+    Question_Pos : Unsigned_64 = 0
+    Header_End : Unsigned_64 = 0
+    Path_End : Unsigned_64
+Implements
+    Req.Method = Empty_Text()
+    Req.Path = Empty_Text()
+    Req.Query = Empty_Text()
+    Req.Headers = Empty_Text()
+    Req.Body = Empty_Text()
+    Req.Remote_Ip = Empty_Text()
+    Req.Remote_Port = 0
+
+    Len = Raw.Length
+    If Len < 10
+        Give Req
+    End If
+
+    # Find first line: METHOD /path?query HTTP/1.1\r\n
+    Loop while (I <= Len)
+        C = Raw[I] as Unsigned_32
+        If C == 32 # ' '
+            If Space1 == 0
+                Space1 = I
+            Else If Space2 == 0
+                Space2 = I
+            End If
+        End If
+        If C == 10 # '\n'
+            Line1_End = I - 1
+            If Line1_End >= 1 And (Raw[Line1_End] as Unsigned_32) == 13 # '\r'
+                Line1_End = Line1_End - 1
+            End If
+            Exit
+        End If
+        I = I + 1
+    End Loop
+
+    If Space1 == 0 Or Space2 == 0 Or Space2 <= Space1
+        Give Req
+    End If
+
+    # Method
+    Req.Method += Raw[1 .. Space1 - 1]
+
+    # Path & Query
+    Path_End = Space2 - 1
+    I = Space1 + 1
+    Loop while (I <= Path_End)
+        If (Raw[I] as Unsigned_32) == 63 # '?'
+            Question_Pos = I
+            Exit
+        End If
+        I = I + 1
+    End Loop
+
+    If Question_Pos > 0
+        Req.Path += Raw[Space1 + 1 .. Question_Pos - 1]
+        If Question_Pos < Path_End
+            Req.Query += Raw[Question_Pos + 1 .. Path_End]
+        End If
+    Else
+        Req.Path += Raw[Space1 + 1 .. Path_End]
+    End If
+
+    # Look for \r\n\r\n (double CRLF separating headers and body)
+    I = Line1_End + 1
+    Loop while (I + 3 <= Len)
+        If (Raw[I] as Unsigned_32) == 13 And (Raw[I+1] as Unsigned_32) == 10 And (Raw[I+2] as Unsigned_32) == 13 And (Raw[I+3] as Unsigned_32) == 10
+            Header_End = I - 1
+            Req.Headers += Raw[Line1_End + 1 .. Header_End]
+            If I + 4 <= Len
+                Req.Body += Raw[I + 4 .. Len]
+            End If
+            Exit
+        End If
+        I = I + 1
+    End Loop
+
+    If Header_End == 0 And Line1_End + 1 <= Len
+        Req.Headers += Raw[Line1_End + 1 .. Len]
+    End If
+
+    Give Req
+End Parse_Request
+
+Block Server_New Takes
+    Config : Server_Config
+Produces Server
+Declares
+    S : Server
+Implements
+    S.Config = Config
+    S.Listen_Fd = -1
+    S.Is_Running = False
+    Give S
+End Server_New
+
+Block Server_Start Takes
+    S : Server
+Produces Server
+Declares
+    Out : Server
+    Fd : Signed_32
+Implements
+    Out.Config = S.Config
+    Out.Listen_Fd = -1
+    Out.Is_Running = False
+
+    Fd = Tcp_Listen(S.Config.Host, S.Config.Port)
+    If Fd < 0
+        Give Out
+    End If
+
+    Out.Listen_Fd = Fd
+    Out.Is_Running = True
+    Give Out
+End Server_Start
+
+Block Server_Accept Takes
+    S : Server
+Produces Signed_32
+Declares
+    Client_Fd : Signed_32
+Implements
+    If Not S.Is_Running Or S.Listen_Fd < 0
+        Give -1
+    End If
+    Client_Fd = Tcp_Accept(S.Listen_Fd)
+    Give Client_Fd
+End Server_Accept
+
+Block Server_Close Takes
+    S : Server
+Produces Signed_32
+Declares
+    Status : Signed_32 = 0
+Implements
+    If S.Listen_Fd >= 0
+        Status = Tcp_Close(S.Listen_Fd)
+    End If
+    Give Status
+End Server_Close

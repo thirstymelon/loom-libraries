@@ -1,0 +1,184 @@
+# Loom RP2040 BSP — Hardware SIO Interpolator (interp0 & interp1)
+Module Interp
+Import RP2040
+
+Enum Unit : Unsigned_32
+    Unit_0 = 0
+    Unit_1 = 1
+End Unit
+
+Enum Lane : Unsigned_32
+    Lane_0 = 0
+    Lane_1 = 1
+End Lane
+
+Block Base Takes
+    U : Unit
+Produces Unsigned_32
+Implements
+    If U == Unit.Unit_0
+        Give 0xD0000080
+    End If
+    Give 0xD00000C0
+End Base
+
+Block Set_Accum Takes
+    U : Unit
+    L : Lane
+    Val : Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    If L == Lane.Lane_0
+        RP2040.Reg_Write(B + 0x00, Val)
+    Else
+        RP2040.Reg_Write(B + 0x04, Val)
+    End If
+End Set_Accum
+
+Block Get_Accum Takes
+    U : Unit
+    L : Lane
+Produces Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    If L == Lane.Lane_0
+        Give RP2040.Reg_Read(B + 0x00)
+    End If
+    Give RP2040.Reg_Read(B + 0x04)
+End Get_Accum
+
+Block Set_Base Takes
+    U : Unit
+    L : Lane
+    Val : Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    If L == Lane.Lane_0
+        RP2040.Reg_Write(B + 0x08, Val)
+    Else
+        RP2040.Reg_Write(B + 0x0C, Val)
+    End If
+End Set_Base
+
+Block Set_Ctrl Takes
+    U : Unit
+    L : Lane
+    Val : Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    If L == Lane.Lane_0
+        RP2040.Reg_Write(B + 0x28, Val)
+    Else
+        RP2040.Reg_Write(B + 0x2C, Val)
+    End If
+End Set_Ctrl
+
+Block Pop_Full Takes
+    U : Unit
+Produces Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    Give RP2040.Reg_Read(B + 0x18)
+End Pop_Full
+
+Block Peek_Full Takes
+    U : Unit
+Produces Unsigned_32
+Declares
+    B : Unsigned_32
+Implements
+    B = Base(U)
+    Give RP2040.Reg_Read(B + 0x24)
+End Peek_Full
+
+# Single-cycle hardware blending: Val_A + (Alpha * (Val_B - Val_A)) >> 8
+Block Blend Takes
+    U : Unit
+    Val_A : Unsigned_32
+    Val_B : Unsigned_32
+    Alpha : Unsigned_32
+Produces Unsigned_32
+Declares
+    B : Unsigned_32
+    Ctrl_L1 : Unsigned_32
+Implements
+    B = Base(U)
+    # Enable BLEND bit (bit 21) in Lane 1 control
+    Ctrl_L1 = (1 LSL 21)
+    RP2040.Reg_Write(B + 0x2C, Ctrl_L1)
+
+    # Base0 = Val_A, Base1 = Val_B
+    RP2040.Reg_Write(B + 0x08, Val_A)
+    RP2040.Reg_Write(B + 0x0C, Val_B)
+
+    # Accum1 = Alpha (fractional weight 0..255)
+    RP2040.Reg_Write(B + 0x04, Alpha)
+
+    # Read blended output directly from PEEK_FULL in 1 cycle
+    Give RP2040.Reg_Read(B + 0x24)
+End Blend
+
+# Sub-cycle hardware linear interpolation between (X0, Y0) and (X1, Y1)
+Block Linear_Interp Takes
+    U : Unit
+    X0 : Unsigned_32
+    Y0 : Unsigned_32
+    X1 : Unsigned_32
+    Y1 : Unsigned_32
+    X  : Unsigned_32
+Produces Unsigned_32
+Declares
+    Delta_X : Unsigned_32
+    Ratio : Unsigned_32
+Implements
+    Delta_X = X1 - X0
+    If Delta_X == 0
+        Give Y0
+    End If
+    Ratio = ((X - X0) * 256) / Delta_X
+    Give Blend(U, Y0, Y1, Ratio)
+End Linear_Interp
+
+# Hardware table lookup with clamp/mask
+Block Table_Lookup Takes
+    U : Unit
+    Table_Base_Addr : Unsigned_32
+    Index : Unsigned_32
+    Shift_Bits : Unsigned_32
+Produces Unsigned_32
+Declares
+    B : Unsigned_32
+    Ctrl : Unsigned_32
+Implements
+    B = Base(U)
+    # Configure Lane 0: Shift and Add to Base
+    Ctrl = (Shift_Bits LSL 0) | (1 LSL 18)
+    RP2040.Reg_Write(B + 0x28, Ctrl)
+    RP2040.Reg_Write(B + 0x08, Table_Base_Addr)
+    RP2040.Reg_Write(B + 0x00, Index)
+    Give RP2040.Reg_Read(B + 0x24)
+End Table_Lookup
+
+# Fixed point multiply using SIO hardware accumulator
+Block Fixed_Point_Mul Takes
+    U : Unit
+    A : Unsigned_32
+    B_Val : Unsigned_32
+    Frac_Bits : Unsigned_32
+Produces Unsigned_32
+Declares
+    Prod : Unsigned_64
+Implements
+    Prod = ((A as Unsigned_64) * (B_Val as Unsigned_64)) LSR Frac_Bits
+    Give Prod as Unsigned_32
+End Fixed_Point_Mul

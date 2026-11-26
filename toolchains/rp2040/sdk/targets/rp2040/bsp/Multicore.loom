@@ -1,0 +1,117 @@
+# Loom RP2040 BSP — Dual-Core SIO FIFO & Core1 Launch
+Module Multicore
+Import RP2040
+
+Block Global
+    Declares
+        SIO_CPUID     : Constant Unsigned_32 = 0xD0000000
+        SIO_FIFO_ST   : Constant Unsigned_32 = 0xD0000050
+        SIO_FIFO_WR   : Constant Unsigned_32 = 0xD0000054
+        SIO_FIFO_RD   : Constant Unsigned_32 = 0xD0000058
+        SIO_SPINLOCK0 : Constant Unsigned_32 = 0xD0000100
+End Global
+
+Block Spinlock_Try_Lock Takes
+    Id : Unsigned_32
+Produces Boolean
+Implements
+    If Id > 31
+        Give False
+    End If
+    Give RP2040.Reg_Read(SIO_SPINLOCK0 + (Id * 4)) != 0
+End Spinlock_Try_Lock
+
+Block Spinlock_Lock Takes
+    Id : Unsigned_32
+Implements
+    If Id <= 31
+        Loop while (RP2040.Reg_Read(SIO_SPINLOCK0 + (Id * 4)) == 0)
+        End Loop
+    End If
+End Spinlock_Lock
+
+Block Spinlock_Unlock Takes
+    Id : Unsigned_32
+Implements
+    If Id <= 31
+        RP2040.Reg_Write(SIO_SPINLOCK0 + (Id * 4), 1)
+    End If
+End Spinlock_Unlock
+
+Block Core_ID Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(SIO_CPUID)
+End Core_ID
+
+Block FIFO_Rvalid Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(SIO_FIFO_ST) & 1) != 0
+End FIFO_Rvalid
+
+Block FIFO_Wready Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(SIO_FIFO_ST) & 2) != 0
+End FIFO_Wready
+
+Block FIFO_Drain
+Declares
+    Dummy : Unsigned_32
+Implements
+    Loop while (FIFO_Rvalid())
+        Dummy = RP2040.Reg_Read(SIO_FIFO_RD)
+    End Loop
+End FIFO_Drain
+
+Block FIFO_Push Takes
+    Val : Unsigned_32
+Implements
+    Loop while (Not FIFO_Wready())
+    End Loop
+    RP2040.Reg_Write(SIO_FIFO_WR, Val)
+End FIFO_Push
+
+Block FIFO_Pop Produces Unsigned_32
+Implements
+    Loop while (Not FIFO_Rvalid())
+        WaitForInterrupt()
+    End Loop
+    Give RP2040.Reg_Read(SIO_FIFO_RD)
+End FIFO_Pop
+
+Block Launch_Core1 Takes
+    Vector_Table_Addr : Unsigned_32
+    Stack_Top_Addr : Unsigned_32
+    Entry_Addr : Unsigned_32
+Produces Boolean
+Declares
+    Cmd : Unsigned_32
+    Resp : Unsigned_32
+    Step_Idx : Unsigned_32 = 0
+Implements
+    Loop while (Step_Idx < 6)
+        If Step_Idx == 0
+            Cmd = 0
+        Else If Step_Idx == 1
+            Cmd = 0
+        Else If Step_Idx == 2
+            Cmd = 1
+        Else If Step_Idx == 3
+            Cmd = Vector_Table_Addr
+        Else If Step_Idx == 4
+            Cmd = Stack_Top_Addr
+        Else
+            Cmd = Entry_Addr
+        End If
+        If Cmd == 0
+            FIFO_Drain()
+        End If
+        FIFO_Push(Cmd)
+        Resp = FIFO_Pop()
+        If Resp != Cmd
+            Step_Idx = 0
+        Else
+            Step_Idx = Step_Idx + 1
+        End If
+    End Loop
+    Give True
+End Launch_Core1

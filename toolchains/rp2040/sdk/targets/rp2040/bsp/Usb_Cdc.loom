@@ -1,0 +1,53 @@
+# Loom RP2040 BSP — USB-CDC Serial Console Interface
+Module Usb_Cdc
+
+Block Is_Configured Produces Boolean
+Implements
+    Give __loom_usb_is_configured() != 0
+End Is_Configured
+
+Block Available Produces Signed_32
+Implements
+    Give __loom_usb_available()
+End Available
+
+Block Read_Byte Produces Signed_32
+Implements
+    Give __loom_usb_read_byte()
+End Read_Byte
+
+Block Write_Byte Takes
+    Byte_Val : Unsigned_8
+Implements
+    __loom_usb_putchar(Byte_Val as Signed_32)
+End Write_Byte
+
+Block Write_Str Takes
+    Str : String
+Implements
+    __loom_usb_write_str(Str)
+End Write_Str
+
+Enum Output_Sink : Unsigned_32
+    USB = 0
+    UART0 = 1
+    UART1 = 2
+    None = 3
+End Output_Sink
+
+Extern Block __loom_set_output_sink Takes Sink : Unsigned_32
+End __loom_set_output_sink
+
+Extern Block __loom_get_output_sink Produces Unsigned_32
+End __loom_get_output_sink
+
+Block Set_Output_Sink Takes
+    Sink : Output_Sink
+Implements
+    __loom_set_output_sink(Sink as Unsigned_32)
+End Set_Output_Sink
+
+Block Get_Output_Sink Produces Output_Sink
+Implements
+    Give __loom_get_output_sink() as Output_Sink
+End Get_Output_Sink

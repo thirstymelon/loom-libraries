@@ -1,0 +1,55 @@
+# Loom RP2040 BSP — Clocks, XOSC & PLL Configuration
+Module Clock
+Import RP2040
+
+Block Global
+    Declares
+        SYS_CLK_HZ  : Constant Unsigned_32 = 125000000
+        PERI_CLK_HZ : Constant Unsigned_32 = 125000000
+        USB_CLK_HZ  : Constant Unsigned_32 = 48000000
+        ADC_CLK_HZ  : Constant Unsigned_32 = 48000000
+        XOSC_HZ     : Constant Unsigned_32 = 12000000
+End Global
+
+Block Get_Sys_Hz Produces Unsigned_32
+Implements
+    Give SYS_CLK_HZ
+End Get_Sys_Hz
+
+Block Get_Peri_Hz Produces Unsigned_32
+Implements
+    Give PERI_CLK_HZ
+End Get_Peri_Hz
+
+Block Get_USB_Hz Produces Unsigned_32
+Implements
+    Give USB_CLK_HZ
+End Get_USB_Hz
+
+Block Get_ADC_Hz Produces Unsigned_32
+Implements
+    Give ADC_CLK_HZ
+End Get_ADC_Hz
+
+Block PLL_Configuration Takes
+    Pll_Base : Unsigned_32
+    Ref_Div : Unsigned_32
+    Fb_Div : Unsigned_32
+    Post_Div1 : Unsigned_32
+    Post_Div2 : Unsigned_32
+Declares
+    Prim_Val : Unsigned_32
+Implements
+    RP2040.Reg_Write(Pll_Base + 0x04, 0x2D)
+    RP2040.Reg_Write(Pll_Base + 0x00, Ref_Div & 0x3F)
+    RP2040.Reg_Write(Pll_Base + 0x08, Fb_Div & 0xFFF)
+    RP2040.Reg_Write(Pll_Base + 0x04, 0x0C)
+    Loop
+        If (RP2040.Reg_Read(Pll_Base + 0x00) & 0x80000000) != 0
+            Exit
+        End If
+    End Loop
+    Prim_Val = ((Post_Div1 & 7) LSL 16) | ((Post_Div2 & 7) LSL 12)
+    RP2040.Reg_Write(Pll_Base + 0x0C, Prim_Val)
+    RP2040.Reg_Write(Pll_Base + 0x04, 0x00)
+End PLL_Configuration

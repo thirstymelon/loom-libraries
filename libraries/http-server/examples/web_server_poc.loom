@@ -1,0 +1,112 @@
+Module WebServerPoc
+Import HttpServer
+Import Net
+use HttpServer
+use Net
+
+Block Main Declares
+    Host_Str : Text
+    Cfg : Server_Config
+    S : Server
+    Running : Boolean = True
+    Client_Fd : Signed_32
+    Raw_Req : Text
+    Req : Request
+    Res : Response_Writer
+    Status : Signed_32
+    Route_Home : Text
+    Route_Status : Text
+    Route_Echo : Text
+    Route_Health : Text
+    Route_Shutdown : Text
+    Echo_Resp : Text
+Implements
+    Host_Str += "127.0.0.1"
+    Cfg.Host = Move Host_Str
+    Cfg.Port = 8088
+    Cfg.Backlog = 128
+    Cfg.Timeout_Ms = 5000
+
+    Route_Home += "/"
+    Route_Status += "/api/status"
+    Route_Echo += "/api/echo"
+    Route_Health += "/healthz"
+    Route_Shutdown += "/api/shutdown"
+
+    S = HttpServer.Server_New(Cfg)
+    S = HttpServer.Server_Start(S)
+
+    If Not S.Is_Running
+        Print("Failed to start HTTP server on 127.0.0.1:8088\n")
+    Else
+        Print("====================================================\n")
+        Print("  Loom Web Server PoC running on http://127.0.0.1:8088\n")
+        Print("  Routes:\n")
+        Print("    GET  /              -> Interactive HTML page\n")
+        Print("    GET  /api/status    -> Server info (JSON)\n")
+        Print("    POST /api/echo      -> Echo request body (JSON)\n")
+        Print("    GET  /healthz       -> Health check (text)\n")
+        Print("    GET  /api/shutdown  -> Graceful shutdown\n")
+        Print("====================================================\n")
+
+        Loop while (Running)
+            Client_Fd = HttpServer.Server_Accept(S)
+            If Client_Fd < 0
+                Print("Server stopped or accept failed.\n")
+                Exit
+            End If
+
+            # Set read timeout to 3 seconds
+            Status = Net.Tcp_Set_Timeout(Client_Fd, 3000)
+
+            # Receive HTTP request from client
+            Raw_Req = Tcp_Receive(Client_Fd, 8192)
+
+            If Raw_Req.Length > 0
+                Req = HttpServer.Parse_Request(Raw_Req)
+
+                Print("[REQUEST] ")
+                Print(Req.Method)
+                Print(" ")
+                Print(Req.Path)
+                Print("\n")
+
+                Res = HttpServer.Res_New()
+
+                If Req.Path == Route_Home
+                    Res = HttpServer.Res_Status(Res, 200)
+                    Res = HttpServer.Res_Html(Res, "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Loom Web Server</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:40px;background:#0f172a;color:#f8fafc;}h1{color:#38bdf8;}a{color:#818cf8;text-decoration:none;}a:hover{text-decoration:underline;}code{background:#1e293b;padding:2px 6px;border-radius:4px;color:#f472b6;}.card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;margin-bottom:20px;}ul{line-height:1.8;}</style></head><body><div class='card'><h1>🚀 Loom Web Server PoC</h1><p>High-performance native web server written entirely in <strong>Loom</strong>.</p></div><div class='card'><h2>Available Endpoints</h2><ul><li><a href='/api/status'><code>GET /api/status</code></a> - Service status & metadata (JSON)</li><li><code>POST /api/echo</code> - Echoes the request payload (JSON)</li><li><a href='/healthz'><code>GET /healthz</code></a> - Liveness probe (Text)</li><li><a href='/api/shutdown'><code>GET /api/shutdown</code></a> - Graceful termination</li></ul></div></body></html>")
+                Else If Req.Path == Route_Status
+                    Res = HttpServer.Res_Status(Res, 200)
+                    Res = HttpServer.Res_Json(Res, "{\"status\":\"online\",\"server\":\"Loom-HttpServer/1.0\",\"language\":\"Loom\",\"version\":\"1.4.0\",\"protocols\":[\"HTTP/1.1\",\"HTTP/2\",\"HTTP/3\"]}")
+                Else If Req.Path == Route_Health
+                    Res = HttpServer.Res_Status(Res, 200)
+                    Res = HttpServer.Res_Text(Res, "OK\n")
+                Else If Req.Path == Route_Echo
+                    Res = HttpServer.Res_Status(Res, 200)
+                    Echo_Resp = HttpServer.Empty_Text()
+                    Echo_Resp += "{\"status\":\"success\",\"method\":\""
+                    Echo_Resp += Req.Method
+                    Echo_Resp += "\",\"echo_body\":\""
+                    Echo_Resp += Req.Body
+                    Echo_Resp += "\"}"
+                    Res = HttpServer.Res_Json_Text(Res, Echo_Resp)
+                Else If Req.Path == Route_Shutdown
+                    Res = HttpServer.Res_Status(Res, 200)
+                    Res = HttpServer.Res_Json(Res, "{\"shutdown\":true,\"message\":\"Server shutting down...\"}")
+                    Running = False
+                Else
+                    Res = HttpServer.Res_Status(Res, 404)
+                    Res = HttpServer.Res_Json(Res, "{\"error\":\"Not Found\",\"code\":404,\"message\":\"The requested resource does not exist\"}")
+                End If
+
+                Status = HttpServer.Res_Send(Res, Client_Fd)
+            End If
+
+            Tcp_Close(Client_Fd)
+        End Loop
+
+        Status = HttpServer.Server_Close(S)
+        Print("Loom HTTP Server stopped successfully.\n")
+    End If
+End Main

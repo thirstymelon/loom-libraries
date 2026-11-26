@@ -1,0 +1,6 @@
+name = "rp2040"
+kind = "rp2040"
+version = "1.5.0"
+description = "Loom RP2040 Embedded Bare-Metal Toolchain (ARM Cortex-M0+)"
+target = "thumbv6m-none-eabi"
+cpu = "cortex-m0plus"

@@ -1,0 +1,291 @@
+# Loom RP2040 BSP — GPIO, SIO & Pads Control
+Module Gpio
+Import RP2040
+
+Tagged Record Pin
+    Number : Unsigned_32
+End Pin
+
+Enum Pull : Unsigned_32
+    None
+    Up
+    Down
+End Pull
+
+Enum Function : Unsigned_32
+    SIO = 5
+    SPI = 1
+    UART = 2
+    I2C = 3
+    PWM = 4
+    PIO0 = 6
+    PIO1 = 7
+    Clock = 8
+    USB = 9
+    None_Func = 31
+End Function
+
+Enum Gpio_Error : Signed_32
+    Err_Invalid_Pin = -1
+    Err_Invalid_Arg = -2
+    Err_Pin_In_Use = -3
+End Gpio_Error
+
+Block Global
+    Declares
+        PULL_NONE : Constant Unsigned_32 = 0
+        PULL_UP   : Constant Unsigned_32 = 1
+        PULL_DOWN : Constant Unsigned_32 = 2
+
+        FUNC_SPI  : Constant Unsigned_32 = 1
+        FUNC_UART : Constant Unsigned_32 = 2
+        FUNC_I2C  : Constant Unsigned_32 = 3
+        FUNC_PWM  : Constant Unsigned_32 = 4
+        FUNC_SIO  : Constant Unsigned_32 = 5
+        FUNC_PIO0 : Constant Unsigned_32 = 6
+        FUNC_PIO1 : Constant Unsigned_32 = 7
+        FUNC_NULL : Constant Unsigned_32 = 31
+
+        PICO_LED_PIN : Constant Pin = 25
+        Pin_0  : Constant Pin = 0
+        Pin_1  : Constant Pin = 1
+        Pin_2  : Constant Pin = 2
+        Pin_3  : Constant Pin = 3
+        Pin_4  : Constant Pin = 4
+        Pin_5  : Constant Pin = 5
+        Pin_6  : Constant Pin = 6
+        Pin_7  : Constant Pin = 7
+        Pin_8  : Constant Pin = 8
+        Pin_9  : Constant Pin = 9
+        Pin_10 : Constant Pin = 10
+        Pin_11 : Constant Pin = 11
+        Pin_12 : Constant Pin = 12
+        Pin_13 : Constant Pin = 13
+        Pin_14 : Constant Pin = 14
+        Pin_15 : Constant Pin = 15
+        Pin_16 : Constant Pin = 16
+        Pin_17 : Constant Pin = 17
+        Pin_18 : Constant Pin = 18
+        Pin_19 : Constant Pin = 19
+        Pin_20 : Constant Pin = 20
+        Pin_21 : Constant Pin = 21
+        Pin_22 : Constant Pin = 22
+        Pin_23 : Constant Pin = 23
+        Pin_24 : Constant Pin = 24
+        Pin_25 : Constant Pin = 25
+        Pin_26 : Constant Pin = 26
+        Pin_27 : Constant Pin = 27
+        Pin_28 : Constant Pin = 28
+        Pin_29 : Constant Pin = 29
+
+        SIO_GPIO_IN      : Constant Unsigned_32 = 0xD0000004
+        SIO_GPIO_OUT     : Constant Unsigned_32 = 0xD0000010
+        SIO_GPIO_OUT_SET : Constant Unsigned_32 = 0xD0000014
+        SIO_GPIO_OUT_CLR : Constant Unsigned_32 = 0xD0000018
+        SIO_GPIO_OUT_XOR : Constant Unsigned_32 = 0xD000001C
+        SIO_GPIO_OE      : Constant Unsigned_32 = 0xD0000020
+        SIO_GPIO_OE_SET  : Constant Unsigned_32 = 0xD0000024
+        SIO_GPIO_OE_CLR  : Constant Unsigned_32 = 0xD0000028
+
+        GPIO_OUTPUT_MASK : Unsigned_32 = 0
+End Global
+
+Block Is_Valid_Pin Takes
+    Pin_Num : Unsigned_32
+Produces Boolean
+Implements
+    Give Pin_Num <= 29
+End Is_Valid_Pin
+
+Block Set_Function Takes
+    This : Pin
+    Func : Function
+Produces Signed_32 or Gpio_Error
+Declares
+    Pin_Num : Unsigned_32
+    Pad_Addr : Unsigned_32
+    Ctrl_Addr : Unsigned_32
+    Fn_Val : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Not Is_Valid_Pin(Pin_Num)
+        Give Gpio_Error.Err_Invalid_Pin
+    End If
+    Fn_Val = Func as Unsigned_32
+    If Fn_Val == 31
+        RP2040.Pin_Release(Pin_Num)
+    Else
+        If Not RP2040.Pin_Reserve(Pin_Num)
+            Give Gpio_Error.Err_Pin_In_Use
+        End If
+    End If
+    Pad_Addr = RP2040.PADS_BANK0_BASE + 0x04 + (Pin_Num * 4)
+    RP2040.Reg_Write_Masked(Pad_Addr, 0x40, 0xC0)
+    Ctrl_Addr = RP2040.IO_BANK0_BASE + 0x04 + (Pin_Num * 8)
+    RP2040.Reg_Write(Ctrl_Addr, Fn_Val & 0x1F)
+    Give 0
+End Set_Function
+
+Block Set_Pulls Takes
+    This : Pin
+    Pull_Mode : Pull
+Produces Signed_32 or Gpio_Error
+Declares
+    Pin_Num : Unsigned_32
+    Pad_Addr : Unsigned_32
+    Val : Unsigned_32 = 0
+    P_Val : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Not Is_Valid_Pin(Pin_Num)
+        Give Gpio_Error.Err_Invalid_Pin
+    End If
+    P_Val = Pull_Mode as Unsigned_32
+    Pad_Addr = RP2040.PADS_BANK0_BASE + 0x04 + (Pin_Num * 4)
+    If P_Val == 1
+        Val = 0x08
+    Else If P_Val == 2
+        Val = 0x04
+    End If
+    RP2040.Reg_Write_Masked(Pad_Addr, Val, 0x0C)
+    Give 0
+End Set_Pulls
+
+Block Init_Output Takes
+    This : Pin
+Declares
+    Pin_Num : Unsigned_32
+    Mask : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Not Is_Valid_Pin(Pin_Num)
+        Exit
+    End If
+    Mask = 1 LSL Pin_Num
+    RP2040.Reg_Write(SIO_GPIO_OE_CLR, Mask)
+    RP2040.Reg_Write(SIO_GPIO_OUT_CLR, Mask)
+    _ = Set_Function(This, Function.SIO)
+    Unsafe
+        GPIO_OUTPUT_MASK = GPIO_OUTPUT_MASK | Mask
+    End Unsafe
+    RP2040.Reg_Write(SIO_GPIO_OE_SET, Mask)
+End Init_Output
+
+Block Init_Output_With_State Takes
+    This : Pin
+    Initial_High : Boolean
+Declares
+    Pin_Num : Unsigned_32
+    Mask : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Not Is_Valid_Pin(Pin_Num)
+        Exit
+    End If
+    Mask = 1 LSL Pin_Num
+    RP2040.Reg_Write(SIO_GPIO_OE_CLR, Mask)
+    If Initial_High
+        RP2040.Reg_Write(SIO_GPIO_OUT_SET, Mask)
+    Else
+        RP2040.Reg_Write(SIO_GPIO_OUT_CLR, Mask)
+    End If
+    _ = Set_Function(This, Function.SIO)
+    Unsafe
+        GPIO_OUTPUT_MASK = GPIO_OUTPUT_MASK | Mask
+    End Unsafe
+    RP2040.Reg_Write(SIO_GPIO_OE_SET, Mask)
+End Init_Output_With_State
+
+Block Init_Input Takes
+    This : Pin
+    Pull_Mode : Pull
+Declares
+    Pin_Num : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Not Is_Valid_Pin(Pin_Num)
+        Exit
+    End If
+    RP2040.Reg_Write(SIO_GPIO_OE_CLR, 1 LSL Pin_Num)
+    Unsafe
+        GPIO_OUTPUT_MASK = GPIO_OUTPUT_MASK & ~(1 LSL Pin_Num)
+    End Unsafe
+    _ = Set_Function(This, Function.SIO)
+    _ = Set_Pulls(This, Pull_Mode)
+End Init_Input
+
+Block Deinit Takes
+    This : Pin
+Declares
+    Pin_Num : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Is_Valid_Pin(Pin_Num)
+        RP2040.Reg_Write(SIO_GPIO_OE_CLR, 1 LSL Pin_Num)
+        Unsafe
+            GPIO_OUTPUT_MASK = GPIO_OUTPUT_MASK & ~(1 LSL Pin_Num)
+        End Unsafe
+        _ = Set_Function(This, Function.None_Func)
+    End If
+End Deinit
+
+Block Write Takes
+    This : Pin
+    High : Boolean
+Declares
+    Pin_Num : Unsigned_32
+    Is_Out : Boolean = False
+Implements
+    Pin_Num = This.Number
+    If Is_Valid_Pin(Pin_Num)
+        Unsafe
+            Is_Out = ((GPIO_OUTPUT_MASK LSR Pin_Num) & 1) != 0
+        End Unsafe
+        If Is_Out
+            If High
+                RP2040.Reg_Write(SIO_GPIO_OUT_SET, 1 LSL Pin_Num)
+            Else
+                RP2040.Reg_Write(SIO_GPIO_OUT_CLR, 1 LSL Pin_Num)
+            End If
+        End If
+    End If
+End Write
+
+Block High Takes
+    This : Pin
+Implements
+    Write(This, True)
+End High
+
+Block Low Takes
+    This : Pin
+Implements
+    Write(This, False)
+End Low
+
+Block Toggle Takes
+    This : Pin
+Declares
+    Pin_Num : Unsigned_32
+    Is_Out : Boolean = False
+Implements
+    Pin_Num = This.Number
+    If Is_Valid_Pin(Pin_Num)
+        Unsafe
+            Is_Out = ((GPIO_OUTPUT_MASK LSR Pin_Num) & 1) != 0
+        End Unsafe
+        If Is_Out
+            RP2040.Reg_Write(SIO_GPIO_OUT_XOR, 1 LSL Pin_Num)
+        End If
+    End If
+End Toggle
+
+Block Read Takes
+    This : Pin
+Produces Boolean
+Implements
+    If Not Is_Valid_Pin(This.Number)
+        Give False
+    End If
+    Give ((RP2040.Reg_Read(SIO_GPIO_IN) LSR This.Number) & 1) != 0
+End Read

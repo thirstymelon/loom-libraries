@@ -1,0 +1,48 @@
+Module Thread
+
+Enum Priority : Unsigned_32
+    Idle = 0
+    Low = 1
+    Normal = 2
+    High = 3
+    Realtime = 4
+End Priority
+
+Enum Core : Unsigned_32
+    Core0 = 0
+    Core1 = 1
+    Both = 2
+End Core
+
+Extern Block loom_scheduler_yield
+End loom_scheduler_yield
+
+Extern Block loom_scheduler_sleep_ms Takes MS : Unsigned_32
+End loom_scheduler_sleep_ms
+
+Extern Block loom_scheduler_core_id Produces Unsigned_32
+End loom_scheduler_core_id
+
+Extern Block loom_scheduler_task_id Produces Unsigned_32
+End loom_scheduler_task_id
+
+Block Yield
+Implements
+    loom_scheduler_yield()
+End Yield
+
+Block Sleep_MS Takes
+    MS : Unsigned_32
+Implements
+    loom_scheduler_sleep_ms(MS)
+End Sleep_MS
+
+Block Core_ID Produces Unsigned_32
+Implements
+    Give loom_scheduler_core_id()
+End Core_ID
+
+Block Task_ID Produces Unsigned_32
+Implements
+    Give loom_scheduler_task_id()
+End Task_ID

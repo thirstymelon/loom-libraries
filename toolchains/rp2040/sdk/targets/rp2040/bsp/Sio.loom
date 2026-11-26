@@ -1,0 +1,113 @@
+# Loom RP2040 BSP — SIO Hardware Accelerators (Hardware Divider & Cross-Core FIFOs)
+Module Sio
+Import RP2040
+
+Block Global
+    Declares
+        SIO_BASE_ADDR        : Constant Unsigned_32 = 0xD0000000
+        CPUID_ADDR           : Constant Unsigned_32 = 0xD0000000
+        FIFO_ST_ADDR         : Constant Unsigned_32 = 0xD0000050
+        FIFO_WR_ADDR         : Constant Unsigned_32 = 0xD0000054
+        FIFO_RD_ADDR         : Constant Unsigned_32 = 0xD0000058
+        DIV_UDIVIDEND_ADDR   : Constant Unsigned_32 = 0xD0000060
+        DIV_UDIVISOR_ADDR    : Constant Unsigned_32 = 0xD0000064
+        DIV_SDIVIDEND_ADDR   : Constant Unsigned_32 = 0xD0000068
+        DIV_SDIVISOR_ADDR    : Constant Unsigned_32 = 0xD000006C
+        DIV_QUOTIENT_ADDR    : Constant Unsigned_32 = 0xD0000070
+        DIV_REMAINDER_ADDR   : Constant Unsigned_32 = 0xD0000074
+        DIV_CSR_ADDR         : Constant Unsigned_32 = 0xD0000078
+End Global
+
+Block Core_ID Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(CPUID_ADDR)
+End Core_ID
+
+# SIO Hardware Divider (8-cycle hardware calculation)
+Block Div_Start_Unsigned Takes
+    Dividend : Unsigned_32
+    Divisor  : Unsigned_32
+Implements
+    RP2040.Reg_Write(DIV_UDIVIDEND_ADDR, Dividend)
+    RP2040.Reg_Write(DIV_UDIVISOR_ADDR, Divisor)
+End Div_Start_Unsigned
+
+Block Div_Start_Signed Takes
+    Dividend : Signed_32
+    Divisor  : Signed_32
+Implements
+    RP2040.Reg_Write(DIV_SDIVIDEND_ADDR, Dividend as Unsigned_32)
+    RP2040.Reg_Write(DIV_SDIVISOR_ADDR, Divisor as Unsigned_32)
+End Div_Start_Signed
+
+Block Div_Result Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(DIV_QUOTIENT_ADDR)
+End Div_Result
+
+Block Div_Remainder Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(DIV_REMAINDER_ADDR)
+End Div_Remainder
+
+Block Div_Blocking_Unsigned Takes
+    Dividend : Unsigned_32
+    Divisor  : Unsigned_32
+Produces Unsigned_32
+Implements
+    Div_Start_Unsigned(Dividend, Divisor)
+    Give Div_Result()
+End Div_Blocking_Unsigned
+
+Block Div_Blocking_Signed Takes
+    Dividend : Signed_32
+    Divisor  : Signed_32
+Produces Signed_32
+Implements
+    Div_Start_Signed(Dividend, Divisor)
+    Give Div_Result() as Signed_32
+End Div_Blocking_Signed
+
+# Cross-Core SIO Hardware FIFO (8 words deep)
+Block FIFO_Has_Data Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(FIFO_ST_ADDR) & 1) != 0
+End FIFO_Has_Data
+
+Block FIFO_Is_Ready Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(FIFO_ST_ADDR) & 2) != 0
+End FIFO_Is_Ready
+
+Block FIFO_Push Takes
+    Val : Unsigned_32
+Implements
+    Loop
+        If FIFO_Is_Ready()
+            Exit
+        End If
+    End Loop
+    RP2040.Reg_Write(FIFO_WR_ADDR, Val)
+End FIFO_Push
+
+Block FIFO_Pop Produces Unsigned_32
+Implements
+    Loop
+        If FIFO_Has_Data()
+            Exit
+        End If
+    End Loop
+    Give RP2040.Reg_Read(FIFO_RD_ADDR)
+End FIFO_Pop
+
+Block FIFO_Drain
+Declares
+    Discard : Unsigned_32
+Implements
+    Loop
+        If Not FIFO_Has_Data()
+            Exit
+        End If
+        Discard = RP2040.Reg_Read(FIFO_RD_ADDR)
+    End Loop
+End FIFO_Drain

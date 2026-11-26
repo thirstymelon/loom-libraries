@@ -1,0 +1,135 @@
+# Loom RP2040 BSP — PWM Driver (8 Slices x 2 Channels)
+Module Pwm
+Import RP2040
+Import Gpio
+
+Enum Pwm_Error : Signed_32
+    Err_Invalid_Slice = -1
+End Pwm_Error
+
+Tagged Record Pwm_Slice
+    Id : Unsigned_32
+End Pwm_Slice
+
+Block Global
+    Declares
+        Slice_0 : Constant Pwm_Slice = Pwm_Slice { Id : 0 }
+        Slice_1 : Constant Pwm_Slice = Pwm_Slice { Id : 1 }
+        Slice_2 : Constant Pwm_Slice = Pwm_Slice { Id : 2 }
+        Slice_3 : Constant Pwm_Slice = Pwm_Slice { Id : 3 }
+        Slice_4 : Constant Pwm_Slice = Pwm_Slice { Id : 4 }
+        Slice_5 : Constant Pwm_Slice = Pwm_Slice { Id : 5 }
+        Slice_6 : Constant Pwm_Slice = Pwm_Slice { Id : 6 }
+        Slice_7 : Constant Pwm_Slice = Pwm_Slice { Id : 7 }
+End Global
+
+Block Init
+Implements
+    RP2040.Unreset_Wait(RP2040.RESET_PWM)
+End Init
+
+Block Pin_To_Slice Takes
+    Pin : Unsigned_32
+Produces Unsigned_32
+Implements
+    Give (Pin LSR 1) & 0x7
+End Pin_To_Slice
+
+Block From_Pin Takes
+    P : Gpio.Pin
+Produces Pwm_Slice
+Declares
+    S : Pwm_Slice
+Implements
+    S.Id = Pin_To_Slice(P.Number)
+    Give S
+End From_Pin
+
+Block Pin_To_Channel Takes
+    Pin : Unsigned_32
+Produces Unsigned_32
+Implements
+    Give Pin & 0x1
+End Pin_To_Channel
+
+Block Slice_Base Takes
+    Slice_Idx : Unsigned_32
+Produces Unsigned_32
+Implements
+    Give RP2040.PWM_BASE + (Slice_Idx * 20)
+End Slice_Base
+
+Block Set_Wrap Takes
+    This : Pwm_Slice
+    Wrap : Unsigned_16
+Produces Signed_32 or Pwm_Error
+Declares
+    Pwm_Addr : Unsigned_32
+Implements
+    If This.Id > 7
+        Give Pwm_Error.Err_Invalid_Slice
+    End If
+    Pwm_Addr = Slice_Base(This.Id)
+    RP2040.Reg_Write(Pwm_Addr + 0x10, Wrap as Unsigned_32)
+    Give 0
+End Set_Wrap
+
+Block Set_Clkdiv Takes
+    This : Pwm_Slice
+    Int_Part : Unsigned_8
+    Frac_Part : Unsigned_8
+Produces Signed_32 or Pwm_Error
+Declares
+    Pwm_Addr : Unsigned_32
+    Val : Unsigned_32
+Implements
+    If This.Id > 7
+        Give Pwm_Error.Err_Invalid_Slice
+    End If
+    Pwm_Addr = Slice_Base(This.Id)
+    Val = ((Int_Part as Unsigned_32) LSL 4) | ((Frac_Part & 0x0F) as Unsigned_32)
+    RP2040.Reg_Write(Pwm_Addr + 0x04, Val)
+    Give 0
+End Set_Clkdiv
+
+Block Set_Level Takes
+    This : Pwm_Slice
+    Channel : Unsigned_32
+    Level : Unsigned_16
+Produces Signed_32 or Pwm_Error
+Declares
+    Pwm_Addr : Unsigned_32
+    Cur : Unsigned_32
+Implements
+    If This.Id > 7
+        Give Pwm_Error.Err_Invalid_Slice
+    End If
+    Pwm_Addr = Slice_Base(This.Id)
+    Cur = RP2040.Reg_Read(Pwm_Addr + 0x0C)
+    If Channel == 0
+        Cur = (Cur & 0xFFFF0000) | (Level as Unsigned_32)
+    Else
+        Cur = (Cur & 0x0000FFFF) | ((Level as Unsigned_32) LSL 16)
+    End If
+    RP2040.Reg_Write(Pwm_Addr + 0x0C, Cur)
+    Give 0
+End Set_Level
+
+Block Set_Enabled Takes
+    This : Pwm_Slice
+    Enabled : Boolean
+Produces Signed_32 or Pwm_Error
+Declares
+    Pwm_Addr : Unsigned_32
+Implements
+    If This.Id > 7
+        Give Pwm_Error.Err_Invalid_Slice
+    End If
+    Pwm_Addr = Slice_Base(This.Id)
+    If Enabled
+        RP2040.Reg_Set(Pwm_Addr + 0x00, 1)
+    Else
+        RP2040.Reg_Clear(Pwm_Addr + 0x00, 1)
+    End If
+    Give 0
+End Set_Enabled

@@ -1,0 +1,174 @@
+# Loom RP2040 BSP — PL011 UART Driver (UART0 / UART1)
+Module Uart
+Import RP2040
+Import Clock
+Import Gpio
+
+Enum Uart_Port : Unsigned_32
+    UART0
+    UART1
+End Uart_Port
+
+Tagged Record Uart_Device
+    Port_Id : Uart_Port
+End Uart_Device
+
+Record Uart_Config
+    Port_Id   : Uart_Port
+    Tx_Pin    : Gpio.Pin
+    Rx_Pin    : Gpio.Pin
+    Baud_Rate : Unsigned_32
+End Uart_Config
+
+Enum Uart_Error : Signed_32
+    Err_Invalid_ID = -1
+    Err_Invalid_Baud = -2
+End Uart_Error
+
+Block Base Takes
+    P : Uart_Port
+Produces Unsigned_32
+Implements
+    If P == Uart_Port.UART0
+        Give RP2040.UART0_BASE
+    End If
+    Give RP2040.UART1_BASE
+End Base
+
+Block Init Takes
+    P         : Uart_Port
+    Tx        : Gpio.Pin
+    Rx        : Gpio.Pin
+    Baud_Rate : Unsigned_32
+Produces Uart_Device or Uart_Error
+Declares
+    Uart_Addr : Unsigned_32
+    Peri_Hz   : Unsigned_32
+    Baud_Div  : Unsigned_32
+    Ibrd      : Unsigned_32
+    Fbrd      : Unsigned_32
+    Dev       : Uart_Device
+Implements
+    If Baud_Rate == 0
+        Give Uart_Error.Err_Invalid_Baud
+    End If
+
+    If P == Uart_Port.UART0
+        RP2040.Reset_And_Wait(RP2040.RESET_UART0)
+    Else
+        RP2040.Reset_And_Wait(RP2040.RESET_UART1)
+    End If
+
+    # Set GPIO pins to UART function
+    Gpio.Set_Function(Tx, Gpio.Function.UART)
+    Gpio.Set_Function(Rx, Gpio.Function.UART)
+
+    Uart_Addr = Base(P)
+    Peri_Hz = Clock.Get_Peri_Hz()
+    Baud_Div = (8 * Peri_Hz) / Baud_Rate
+    Ibrd = Baud_Div LSR 7
+    Fbrd = ((Baud_Div & 0x7F) + 1) / 2
+    If Ibrd == 0
+        Ibrd = 1
+        Fbrd = 0
+    Else If Ibrd >= 65535
+        Ibrd = 65535
+        Fbrd = 0
+    End If
+    RP2040.Reg_Write(Uart_Addr + 0x30, 0)
+    RP2040.Reg_Write(Uart_Addr + 0x24, Ibrd)
+    RP2040.Reg_Write(Uart_Addr + 0x28, Fbrd)
+    RP2040.Reg_Write(Uart_Addr + 0x2C, 0x70)
+    RP2040.Reg_Write(Uart_Addr + 0x30, 0x301)
+
+    Dev.Port_Id = P
+    Give Dev
+End Init
+
+Block Init_Advanced Takes
+    Cfg : Uart_Config
+Produces Uart_Device or Uart_Error
+Implements
+    Give Init(Cfg.Port_Id, Cfg.Tx_Pin, Cfg.Rx_Pin, Cfg.Baud_Rate)
+End Init_Advanced
+
+Block Is_Writable Takes
+    This : Uart_Device
+Produces Boolean
+Declares
+    Uart_Addr : Unsigned_32
+Implements
+    Uart_Addr = Base(This.Port_Id)
+    Give (RP2040.Reg_Read(Uart_Addr + 0x18) & 0x20) == 0
+End Is_Writable
+
+Block Is_Readable Takes
+    This : Uart_Device
+Produces Boolean
+Declares
+    Uart_Addr : Unsigned_32
+Implements
+    Uart_Addr = Base(This.Port_Id)
+    Give (RP2040.Reg_Read(Uart_Addr + 0x18) & 0x10) == 0
+End Is_Readable
+
+Block Write_Byte Takes
+    This      : Uart_Device
+    Byte_Val  : Unsigned_8
+Declares
+    Uart_Addr : Unsigned_32
+Implements
+    Uart_Addr = Base(This.Port_Id)
+    Loop
+        If (RP2040.Reg_Read(Uart_Addr + 0x18) & 0x20) == 0
+            Exit
+        End If
+    End Loop
+    RP2040.Reg_Write(Uart_Addr + 0x00, Byte_Val as Unsigned_32)
+End Write_Byte
+
+Block Read_Byte Takes
+    This : Uart_Device
+Produces Unsigned_8
+Declares
+    Uart_Addr : Unsigned_32
+Implements
+    Uart_Addr = Base(This.Port_Id)
+    Loop
+        If (RP2040.Reg_Read(Uart_Addr + 0x18) & 0x10) == 0
+            Exit
+        End If
+    End Loop
+    Give (RP2040.Reg_Read(Uart_Addr + 0x00) & 0xFF) as Unsigned_8
+End Read_Byte
+
+Block Write_Str Takes
+    This : Uart_Device
+    Str  : String
+Declares
+    I   : Unsigned_64 = 1
+    Len : Unsigned_64
+    Ch  : Unsigned_8
+Implements
+    Len = Str.Length
+    Loop while (I <= Len)
+        Ch = Str[I] as Unsigned_8
+        Write_Byte(This, Ch)
+        I = I + 1
+    End Loop
+End Write_Str
+
+Block Deinit Takes
+    This : Uart_Device
+Declares
+    Uart_Addr : Unsigned_32
+Implements
+    Uart_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(Uart_Addr + 0x30, 0)
+End Deinit
+
+Block Global
+    Declares
+        UART_0 : Constant Uart_Device = Uart_Device { Port_Id : Uart_Port.UART0 }
+        UART_1 : Constant Uart_Device = Uart_Device { Port_Id : Uart_Port.UART1 }
+End Global

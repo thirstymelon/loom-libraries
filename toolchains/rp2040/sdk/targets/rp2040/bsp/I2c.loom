@@ -1,0 +1,230 @@
+# Loom RP2040 BSP — Synopsys DW_apb_i2c Master Driver (I2C0 / I2C1)
+Module I2c
+Import RP2040
+Import Clock
+Import Gpio
+
+Enum I2c_Port : Unsigned_32
+    I2C0
+    I2C1
+End I2c_Port
+
+Tagged Record I2c_Device
+    Port_Id : I2c_Port
+End I2c_Device
+
+Record I2c_Config
+    Port_Id : I2c_Port
+    Sda_Pin : Gpio.Pin
+    Scl_Pin : Gpio.Pin
+    Baud_Hz : Unsigned_32
+End I2c_Config
+
+Enum I2c_Error : Signed_32
+    Err_Invalid_ID = -1
+    Err_Invalid_Freq = -2
+    Err_Tx_Abort = -3
+End I2c_Error
+
+Block Base Takes
+    P : I2c_Port
+Produces Unsigned_32
+Implements
+    If P == I2c_Port.I2C0
+        Give RP2040.I2C0_BASE
+    End If
+    Give RP2040.I2C1_BASE
+End Base
+
+Block Init Takes
+    P       : I2c_Port
+    Sda     : Gpio.Pin
+    Scl     : Gpio.Pin
+    Baud_Hz : Unsigned_32
+Produces I2c_Device or I2c_Error
+Declares
+    I2c_Addr : Unsigned_32
+    Peri_Hz  : Unsigned_32
+    Period   : Unsigned_32
+    Hcnt     : Unsigned_32
+    Lcnt     : Unsigned_32
+    Con      : Unsigned_32
+    Dev      : I2c_Device
+Implements
+    If Baud_Hz == 0
+        Give I2c_Error.Err_Invalid_Freq
+    End If
+
+    If P == I2c_Port.I2C0
+        RP2040.Reset_And_Wait(RP2040.RESET_I2C0)
+    Else
+        RP2040.Reset_And_Wait(RP2040.RESET_I2C1)
+    End If
+
+    # Configure pins for I2C and enable pull-ups
+    Gpio.Set_Function(Sda, Gpio.Function.I2C)
+    Gpio.Set_Function(Scl, Gpio.Function.I2C)
+    Gpio.Set_Pulls(Sda, Gpio.Pull.Up)
+    Gpio.Set_Pulls(Scl, Gpio.Pull.Up)
+
+    I2c_Addr = Base(P)
+    Peri_Hz = Clock.Get_Peri_Hz()
+
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+    Con = 0x01 | 0x20 | 0x40
+    If Baud_Hz > 100000
+        Con = Con | 0x04
+    Else
+        Con = Con | 0x02
+    End If
+    RP2040.Reg_Write(I2c_Addr + 0x00, Con)
+
+    Period = (Peri_Hz + Baud_Hz / 2) / Baud_Hz
+    Lcnt = (Period * 3) / 5
+    Hcnt = Period - Lcnt
+    If Baud_Hz > 100000
+        RP2040.Reg_Write(I2c_Addr + 0x1C, Hcnt)
+        RP2040.Reg_Write(I2c_Addr + 0x20, Lcnt)
+    Else
+        RP2040.Reg_Write(I2c_Addr + 0x14, Hcnt)
+        RP2040.Reg_Write(I2c_Addr + 0x18, Lcnt)
+    End If
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 1)
+
+    Dev.Port_Id = P
+    Give Dev
+End Init
+
+Block Init_Advanced Takes
+    Cfg : I2c_Config
+Produces I2c_Device or I2c_Error
+Implements
+    Give Init(Cfg.Port_Id, Cfg.Sda_Pin, Cfg.Scl_Pin, Cfg.Baud_Hz)
+End Init_Advanced
+
+Block Write_Byte Takes
+    This      : I2c_Device
+    Addr_7bit : Unsigned_8
+    Data      : Unsigned_8
+Produces Signed_32 or I2c_Error
+Declares
+    I2c_Addr  : Unsigned_32
+    Abort_Src : Unsigned_32
+Implements
+    I2c_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+    RP2040.Reg_Write(I2c_Addr + 0x04, (Addr_7bit & 0x7F) as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 1)
+
+    RP2040.Reg_Write(I2c_Addr + 0x10, (Data as Unsigned_32) | 0x200)
+    Loop
+        If (RP2040.Reg_Read(I2c_Addr + 0x2C) & 0x40) != 0
+            Abort_Src = RP2040.Reg_Read(I2c_Addr + 0x54)
+            Abort_Src = RP2040.Reg_Read(I2c_Addr + 0x80)
+            Give I2c_Error.Err_Tx_Abort
+        End If
+        If (RP2040.Reg_Read(I2c_Addr + 0x70) & 0x04) != 0
+            Exit
+        End If
+    End Loop
+    Give 1
+End Write_Byte
+
+Block Read_Byte Takes
+    This      : I2c_Device
+    Addr_7bit : Unsigned_8
+Produces Unsigned_8 or I2c_Error
+Declares
+    I2c_Addr : Unsigned_32
+    Dummy    : Unsigned_32
+Implements
+    I2c_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+    RP2040.Reg_Write(I2c_Addr + 0x04, (Addr_7bit & 0x7F) as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 1)
+
+    RP2040.Reg_Write(I2c_Addr + 0x10, 0x300)
+    Loop
+        If (RP2040.Reg_Read(I2c_Addr + 0x2C) & 0x40) != 0
+            Dummy = RP2040.Reg_Read(I2c_Addr + 0x54)
+            Give I2c_Error.Err_Tx_Abort
+        End If
+        If (RP2040.Reg_Read(I2c_Addr + 0x70) & 0x08) != 0
+            Exit
+        End If
+    End Loop
+    Give (RP2040.Reg_Read(I2c_Addr + 0x10) & 0xFF) as Unsigned_8
+End Read_Byte
+
+Block Write_Reg Takes
+    This      : I2c_Device
+    Addr_7bit : Unsigned_8
+    Reg       : Unsigned_8
+    Val       : Unsigned_8
+Produces Signed_32 or I2c_Error
+Declares
+    I2c_Addr  : Unsigned_32
+    Abort_Src : Unsigned_32
+Implements
+    I2c_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+    RP2040.Reg_Write(I2c_Addr + 0x04, (Addr_7bit & 0x7F) as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 1)
+
+    RP2040.Reg_Write(I2c_Addr + 0x10, Reg as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x10, (Val as Unsigned_32) | 0x200)
+    Loop
+        If (RP2040.Reg_Read(I2c_Addr + 0x2C) & 0x40) != 0
+            Abort_Src = RP2040.Reg_Read(I2c_Addr + 0x54)
+            Abort_Src = RP2040.Reg_Read(I2c_Addr + 0x80)
+            Give I2c_Error.Err_Tx_Abort
+        End If
+        If (RP2040.Reg_Read(I2c_Addr + 0x70) & 0x04) != 0
+            Exit
+        End If
+    End Loop
+    Give 2
+End Write_Reg
+
+Block Read_Reg Takes
+    This      : I2c_Device
+    Addr_7bit : Unsigned_8
+    Reg       : Unsigned_8
+Produces Unsigned_8 or I2c_Error
+Declares
+    I2c_Addr : Unsigned_32
+    Dummy    : Unsigned_32
+Implements
+    I2c_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+    RP2040.Reg_Write(I2c_Addr + 0x04, (Addr_7bit & 0x7F) as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 1)
+
+    RP2040.Reg_Write(I2c_Addr + 0x10, Reg as Unsigned_32)
+    RP2040.Reg_Write(I2c_Addr + 0x10, 0x300)
+    Loop
+        If (RP2040.Reg_Read(I2c_Addr + 0x2C) & 0x40) != 0
+            Dummy = RP2040.Reg_Read(I2c_Addr + 0x54)
+            Give I2c_Error.Err_Tx_Abort
+        End If
+        If (RP2040.Reg_Read(I2c_Addr + 0x70) & 0x08) != 0
+            Exit
+        End If
+    End Loop
+    Give (RP2040.Reg_Read(I2c_Addr + 0x10) & 0xFF) as Unsigned_8
+End Read_Reg
+
+Block Deinit Takes
+    This : I2c_Device
+Declares
+    I2c_Addr : Unsigned_32
+Implements
+    I2c_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(I2c_Addr + 0x6C, 0)
+End Deinit
+
+Block Global
+    Declares
+        I2C_0 : Constant I2c_Device = I2c_Device { Port_Id : I2c_Port.I2C0 }
+        I2C_1 : Constant I2c_Device = I2c_Device { Port_Id : I2c_Port.I2C1 }
+End Global

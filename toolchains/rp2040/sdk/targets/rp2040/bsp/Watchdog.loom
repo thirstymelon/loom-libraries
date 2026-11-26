@@ -1,0 +1,85 @@
+# Loom RP2040 BSP — Hardware Watchdog Timer
+Module Watchdog
+Import RP2040
+
+Block Global
+    Declares
+        WD_CTRL     : Constant Unsigned_32 = 0x40058000
+        WD_LOAD     : Constant Unsigned_32 = 0x40058004
+        WD_REASON   : Constant Unsigned_32 = 0x40058008
+        WD_SCRATCH0 : Constant Unsigned_32 = 0x4005800C
+        WD_TICK     : Constant Unsigned_32 = 0x4005802C
+        WD_LOAD_VAL : Unsigned_32 = 0
+End Global
+
+Block Enable Takes
+    Delay_Ms : Unsigned_32
+    Pause_On_Debug : Boolean
+Declares
+    Ctrl : Unsigned_32
+    Load_Val : Unsigned_32
+Implements
+    RP2040.Reg_Clear(WD_CTRL, 0x40000000)
+    Load_Val = Delay_Ms * 2000
+    If Load_Val > 0xFFFFFF
+        Load_Val = 0xFFFFFF
+    End If
+    Unsafe
+        WD_LOAD_VAL = Load_Val
+    End Unsafe
+    RP2040.Reg_Write(WD_LOAD, Load_Val)
+    Ctrl = 0x40000000
+    If Pause_On_Debug
+        Ctrl = Ctrl | 0x07000000
+    End If
+    RP2040.Reg_Write(WD_CTRL, Ctrl)
+End Enable
+
+Block Update
+Declares
+    Load_Val : Unsigned_32 = 0
+Implements
+    Unsafe
+        Load_Val = WD_LOAD_VAL
+    End Unsafe
+    RP2040.Reg_Write(WD_LOAD, Load_Val)
+End Update
+
+Block Feed
+Implements
+    Update()
+End Feed
+
+Block Caused_Reboot Produces Boolean
+Implements
+    Give RP2040.Reg_Read(WD_REASON) != 0
+End Caused_Reboot
+
+Block Set_Scratch Takes
+    Idx : Unsigned_32
+    Val : Unsigned_32
+Implements
+    If Idx < 8
+        RP2040.Reg_Write(WD_SCRATCH0 + (Idx * 4), Val)
+    End If
+End Set_Scratch
+
+Block Get_Scratch Takes
+    Idx : Unsigned_32
+Produces Unsigned_32
+Implements
+    If Idx >= 8
+        Give 0
+    End If
+    Give RP2040.Reg_Read(WD_SCRATCH0 + (Idx * 4))
+End Get_Scratch
+
+Block Reboot Takes
+    Delay_Ms : Unsigned_32
+Implements
+    RP2040.Reg_Write(WD_SCRATCH0 + 16, 0)
+    Enable(Delay_Ms, False)
+    Loop
+        WaitForInterrupt()
+    End Loop
+End Reboot

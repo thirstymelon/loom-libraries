@@ -1,0 +1,72 @@
+# Loom RP2040 BSP — Non-Volatile Flash Crash Blackbox Forensics
+Module Crash
+Import RP2040
+
+Block Global
+    Declares
+        FLASH_BLACKBOX_ADDR : Constant Unsigned_32 = 0x101FF000
+        CRASH_MAGIC         : Constant Unsigned_32 = 0x4C4F4F4D # 'LOOM'
+    End Global
+
+Block Did_Crash Produces Boolean
+Declares
+    Magic : Unsigned_32
+Implements
+    Magic = RP2040.Reg_Read(FLASH_BLACKBOX_ADDR)
+    Give Magic == CRASH_MAGIC
+End Did_Crash
+
+Block Get_Last_PC Produces Unsigned_32
+Implements
+    If Did_Crash() == False
+        Give 0
+    End If
+    Give RP2040.Reg_Read(FLASH_BLACKBOX_ADDR + 0x08)
+End Get_Last_PC
+
+Block Get_Last_LR Produces Unsigned_32
+Implements
+    If Did_Crash() == False
+        Give 0
+    End If
+    Give RP2040.Reg_Read(FLASH_BLACKBOX_ADDR + 0x0C)
+End Get_Last_LR
+
+Block Get_Last_Fault_Type Produces Unsigned_32
+Implements
+    If Did_Crash() == False
+        Give 0
+    End If
+    Give RP2040.Reg_Read(FLASH_BLACKBOX_ADDR + 0x30)
+End Get_Last_Fault_Type
+
+Block Get_Last_Task_ID Produces Unsigned_32
+Implements
+    If Did_Crash() == False
+        Give 0
+    End If
+    Give RP2040.Reg_Read(FLASH_BLACKBOX_ADDR + 0x28)
+End Get_Last_Task_ID
+
+Block Print_Crash_Report
+Declares
+    PC_Val : Unsigned_32
+    LR_Val : Unsigned_32
+    Fault  : Unsigned_32
+    TID    : Unsigned_32
+Implements
+    If Did_Crash() == False
+        Print("No crash record found in non-volatile flash blackbox.\n")
+    Else
+        PC_Val = Get_Last_PC()
+        LR_Val = Get_Last_LR()
+        Fault  = Get_Last_Fault_Type()
+        TID    = Get_Last_Task_ID()
+        Print("=== RP2040 CRASH BLACKBOX FORENSICS ===\n")
+        Print("Fault Type: <Fault>\n")
+        Print("Task ID:    <TID>\n")
+        Print("Fault PC:   <PC_Val>\n")
+        Print("Link Reg:   <LR_Val>\n")
+        Print("=======================================\n")
+    End If
+End Print_Crash_Report

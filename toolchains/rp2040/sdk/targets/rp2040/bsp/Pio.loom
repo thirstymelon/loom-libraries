@@ -1,0 +1,493 @@
+# Loom RP2040 BSP — Programmable I/O (PIO0 / PIO1)
+Module Pio
+Import RP2040
+
+Enum Pio_Error : Signed_32
+    Err_Invalid_Unit = -1
+    Err_Invalid_SM = -2
+    Err_Invalid_Addr = -3
+End Pio_Error
+
+Block Base Takes
+    Unit : Unsigned_32
+Produces Unsigned_32
+Implements
+    If Unit == 0
+        Give RP2040.PIO0_BASE
+    End If
+    Give RP2040.PIO1_BASE
+End Base
+
+Block Init Takes
+    Unit : Unsigned_32
+Produces Signed_32 or Pio_Error
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Unit == 0
+        RP2040.Reset_And_Wait(RP2040.RESET_PIO0)
+    Else
+        RP2040.Reset_And_Wait(RP2040.RESET_PIO1)
+    End If
+    Give 0
+End Init
+
+Block Load_Instr Takes
+    Unit : Unsigned_32
+    Offset : Unsigned_32
+    Instr : Unsigned_16
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Offset > 31
+        Give Pio_Error.Err_Invalid_Addr
+    End If
+    Pio_Addr = Base(Unit)
+    RP2040.Reg_Write(Pio_Addr + 0x048 + (Offset * 4), Instr as Unsigned_32)
+    Give 0
+End Load_Instr
+
+Block SM_Set_Enabled Takes
+    Unit : Unsigned_32
+    Sm : Unsigned_32
+    Enabled : Boolean
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit)
+    If Enabled
+        RP2040.Reg_Set(Pio_Addr + 0x000, 1 LSL Sm)
+    Else
+        RP2040.Reg_Clear(Pio_Addr + 0x000, 1 LSL Sm)
+    End If
+    Give 0
+End SM_Set_Enabled
+
+Block SM_Set_Clkdiv Takes
+    Unit : Unsigned_32
+    Sm : Unsigned_32
+    Int_Div : Unsigned_16
+    Frac_Div : Unsigned_8
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+    Val : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit) + 0x0C8 + (Sm * 0x18)
+    Val = ((Int_Div as Unsigned_32) LSL 16) | ((Frac_Div as Unsigned_32) LSL 8)
+    RP2040.Reg_Write(Pio_Addr + 0x00, Val)
+    Give 0
+End SM_Set_Clkdiv
+
+Block SM_Put Takes
+    Unit : Unsigned_32
+    Sm : Unsigned_32
+    Data : Unsigned_32
+Declares
+    Pio_Addr : Unsigned_32
+Implements
+    Pio_Addr = Base(Unit)
+    Loop
+        If (RP2040.Reg_Read(Pio_Addr + 0x004) & (1 LSL (16 + Sm))) == 0
+            Exit
+        End If
+    End Loop
+    RP2040.Reg_Write(Pio_Addr + 0x010 + (Sm * 4), Data)
+End SM_Put
+
+Block SM_Get Takes
+    Unit : Unsigned_32
+    Sm : Unsigned_32
+Produces Unsigned_32
+Declares
+    Pio_Addr : Unsigned_32
+Implements
+    Pio_Addr = Base(Unit)
+    Loop
+        If (RP2040.Reg_Read(Pio_Addr + 0x004) & (1 LSL (8 + Sm))) == 0
+            Exit
+        End If
+    End Loop
+    Give RP2040.Reg_Read(Pio_Addr + 0x020 + (Sm * 4))
+End SM_Get
+
+# PIO Instruction Encoders (DSL Helpers)
+# JMP (Condition: 0..7, Address: 0..31)
+Block Encode_JMP Takes
+    Cond : Unsigned_16
+    Addr : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((0 as Unsigned_16) LSL 13) | ((Cond & 7) LSL 5) | (Addr & 31)
+End Encode_JMP
+
+# WAIT (Polarity: 0..1, Source: 0..3, Index: 0..31)
+Block Encode_WAIT Takes
+    Polarity : Unsigned_16
+    Source   : Unsigned_16
+    Index    : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((1 as Unsigned_16) LSL 13) | ((Polarity & 1) LSL 7) | ((Source & 3) LSL 5) | (Index & 31)
+End Encode_WAIT
+
+# IN (Source: 0..7, BitCount: 1..32, 32 encoded as 0)
+Block Encode_IN Takes
+    Source   : Unsigned_16
+    BitCount : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((2 as Unsigned_16) LSL 13) | ((Source & 7) LSL 5) | (BitCount & 31)
+End Encode_IN
+
+# OUT (Destination: 0..7, BitCount: 1..32, 32 encoded as 0)
+Block Encode_OUT Takes
+    Dest     : Unsigned_16
+    BitCount : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((3 as Unsigned_16) LSL 13) | ((Dest & 7) LSL 5) | (BitCount & 31)
+End Encode_OUT
+
+# PULL (IfEmpty: 0..1, Block: 0..1)
+Block Encode_PULL Takes
+    IfEmpty : Unsigned_16
+    BlockWait : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((4 as Unsigned_16) LSL 13) | ((IfEmpty & 1) LSL 6) | ((BlockWait & 1) LSL 5)
+End Encode_PULL
+
+# PUSH (IfFull: 0..1, Block: 0..1)
+Block Encode_PUSH Takes
+    IfFull : Unsigned_16
+    BlockWait : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((4 as Unsigned_16) LSL 13) | (1 LSL 7) | ((IfFull & 1) LSL 6) | ((BlockWait & 1) LSL 5)
+End Encode_PUSH
+
+# MOV (Destination: 0..7, Operation: 0..3, Source: 0..7)
+Block Encode_MOV Takes
+    Dest : Unsigned_16
+    Op   : Unsigned_16
+    Src  : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((5 as Unsigned_16) LSL 13) | ((Dest & 7) LSL 5) | ((Op & 3) LSL 3) | (Src & 7)
+End Encode_MOV
+
+# IRQ (Clear: 0..1, Wait: 0..1, Index: 0..7)
+Block Encode_IRQ Takes
+    Clear : Unsigned_16
+    Wait  : Unsigned_16
+    Index : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((6 as Unsigned_16) LSL 13) | ((Clear & 1) LSL 6) | ((Wait & 1) LSL 5) | (Index & 7)
+End Encode_IRQ
+
+# SET (Destination: 0..7, Data: 0..31)
+Block Encode_SET Takes
+    Dest : Unsigned_16
+    Data : Unsigned_16
+Produces Unsigned_16
+Implements
+    Give ((7 as Unsigned_16) LSL 13) | ((Dest & 7) LSL 5) | (Data & 31)
+End Encode_SET
+
+Record Pio_Program
+    Instructions : Unsigned_16 Pointer
+    Length       : Unsigned_32
+    Origin       : Signed_32
+    Wrap_Target  : Unsigned_32
+    Wrap         : Unsigned_32
+End Pio_Program
+
+Block Load_Program Takes
+    Unit : Unsigned_32
+    Sm   : Unsigned_32
+    Prog : Pio_Program
+Produces Signed_32 or Pio_Error
+Declares
+    I : Unsigned_32
+    Pio_Addr : Unsigned_32
+    Exec_Ctrl : Unsigned_32
+    Discard : Signed_32 or Pio_Error
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    I = 0
+    Loop
+        If I >= Prog.Length
+            Exit
+        End If
+        Discard = Load_Instr(Unit, I, Prog.Instructions[I + 1])
+        I = I + 1
+    End Loop
+    Pio_Addr = Base(Unit) + 0x0C8 + (Sm * 0x18)
+    Exec_Ctrl = RP2040.Reg_Read(Pio_Addr + 0x04)
+    Exec_Ctrl = (Exec_Ctrl & ~(0x3FF LSL 7)) | ((Prog.Wrap_Target & 31) LSL 7) | ((Prog.Wrap & 31) LSL 12)
+    RP2040.Reg_Write(Pio_Addr + 0x04, Exec_Ctrl)
+    Give 0
+End Load_Program
+
+Enum FIFO_Join : Unsigned_32
+    None = 0
+    Join_TX = 1
+    Join_RX = 2
+End FIFO_Join
+
+Block SM_Set_FIFO_Join Takes
+    Unit      : Unsigned_32
+    Sm        : Unsigned_32
+    Join_Mode : FIFO_Join
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+    Shift_Ctrl : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit) + 0x0C8 + (Sm * 0x18)
+    Shift_Ctrl = RP2040.Reg_Read(Pio_Addr + 0x08)
+    Shift_Ctrl = Shift_Ctrl & ~(3 LSL 30)
+    If Join_Mode == FIFO_Join.Join_TX
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 30)
+    Else If Join_Mode == FIFO_Join.Join_RX
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 31)
+    End If
+    RP2040.Reg_Write(Pio_Addr + 0x08, Shift_Ctrl)
+    Give 0
+End SM_Set_FIFO_Join
+
+Block SM_Set_Shift Takes
+    Unit            : Unsigned_32
+    Sm              : Unsigned_32
+    Autopull        : Boolean
+    Autopush        : Boolean
+    Push_Threshold  : Unsigned_32
+    Pull_Threshold  : Unsigned_32
+    In_Shift_Right  : Boolean
+    Out_Shift_Right : Boolean
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr   : Unsigned_32
+    Shift_Ctrl : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit) + 0x0C8 + (Sm * 0x18)
+    Shift_Ctrl = RP2040.Reg_Read(Pio_Addr + 0x08) & (3 LSL 30)
+    If Autopush
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 16)
+    End If
+    If Autopull
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 17)
+    End If
+    If In_Shift_Right
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 18)
+    End If
+    If Out_Shift_Right
+        Shift_Ctrl = Shift_Ctrl | (1 LSL 19)
+    End If
+    Shift_Ctrl = Shift_Ctrl | ((Push_Threshold & 31) LSL 20)
+    Shift_Ctrl = Shift_Ctrl | ((Pull_Threshold & 31) LSL 25)
+    RP2040.Reg_Write(Pio_Addr + 0x08, Shift_Ctrl)
+    Give 0
+End SM_Set_Shift
+
+Block SM_Set_Pin_Mappings Takes
+    Unit          : Unsigned_32
+    Sm            : Unsigned_32
+    Out_Base      : Unsigned_32
+    Out_Count     : Unsigned_32
+    Set_Base      : Unsigned_32
+    Set_Count     : Unsigned_32
+    In_Base       : Unsigned_32
+    Sideset_Base  : Unsigned_32
+    Sideset_Count : Unsigned_32
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+    Pin_Ctrl : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pin_Ctrl = (Out_Base & 31) | ((Set_Base & 31) LSL 5) | ((Sideset_Base & 31) LSL 10) | ((In_Base & 31) LSL 15) | ((Out_Count & 63) LSL 20) | ((Set_Count & 7) LSL 26) | ((Sideset_Count & 7) LSL 29)
+    Pio_Addr = Base(Unit) + 0x0C8 + (Sm * 0x18)
+    RP2040.Reg_Write(Pio_Addr + 0x14, Pin_Ctrl)
+    Give 0
+End SM_Set_Pin_Mappings
+
+Block IRQ_Set_Enabled Takes
+    Unit        : Unsigned_32
+    Irq_Idx     : Unsigned_32
+    Source_Mask : Unsigned_32
+    Enable      : Boolean
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+    Reg_Off  : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Irq_Idx > 1
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit)
+    If Irq_Idx == 0
+        Reg_Off = 0x030
+    Else
+        Reg_Off = 0x03C
+    End If
+    If Enable
+        RP2040.Reg_Set(Pio_Addr + Reg_Off, Source_Mask)
+    Else
+        RP2040.Reg_Clear(Pio_Addr + Reg_Off, Source_Mask)
+    End If
+    Give 0
+End IRQ_Set_Enabled
+
+Block IRQ_Clear Takes
+    Unit        : Unsigned_32
+    Irq_Idx     : Unsigned_32
+    Source_Mask : Unsigned_32
+Produces Signed_32 or Pio_Error
+Declares
+    Pio_Addr : Unsigned_32
+    Reg_Off  : Unsigned_32
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Irq_Idx > 1
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Pio_Addr = Base(Unit)
+    If Irq_Idx == 0
+        Reg_Off = 0x034
+    Else
+        Reg_Off = 0x040
+    End If
+    RP2040.Reg_Write(Pio_Addr + Reg_Off, Source_Mask)
+    Give 0
+End IRQ_Clear
+
+Block SM_Init_Default Takes
+    Unit      : Unsigned_32
+    Sm        : Unsigned_32
+    Prog      : Pio_Program
+    Pin_Base  : Unsigned_32
+    Pin_Count : Unsigned_32
+Produces Signed_32 or Pio_Error
+Implements
+    If Unit > 1
+        Give Pio_Error.Err_Invalid_Unit
+    End If
+    If Sm > 3
+        Give Pio_Error.Err_Invalid_SM
+    End If
+    Load_Program(Unit, Sm, Prog)
+    SM_Set_Pin_Mappings(Unit, Sm, Pin_Base, Pin_Count, Pin_Base, Pin_Count, Pin_Base, 0, 0)
+    SM_Set_Clkdiv(Unit, Sm, 1, 0)
+    Give 0
+End SM_Init_Default
+
+Tagged Record State_Machine
+    Unit : Unsigned_32
+    Sm   : Unsigned_32
+End State_Machine
+
+Block SM Takes
+    Unit : Unsigned_32
+    Sm   : Unsigned_32
+Produces State_Machine
+Declares
+    M : State_Machine
+Implements
+    M.Unit = Unit
+    M.Sm = Sm
+    Give M
+End SM
+
+Block Set_Enabled Takes
+    This    : State_Machine
+    Enabled : Boolean
+Produces Signed_32 or Pio_Error
+Implements
+    Give SM_Set_Enabled(This.Unit, This.Sm, Enabled)
+End Set_Enabled
+
+Block Set_Clkdiv Takes
+    This      : State_Machine
+    Int_Part  : Unsigned_16
+    Frac_Part : Unsigned_8
+Produces Signed_32 or Pio_Error
+Implements
+    Give SM_Set_Clkdiv(This.Unit, This.Sm, Int_Part, Frac_Part)
+End Set_Clkdiv
+
+Block Put Takes
+    This : State_Machine
+    Val  : Unsigned_32
+Implements
+    SM_Put(This.Unit, This.Sm, Val)
+End Put
+
+Block Get Takes
+    This : State_Machine
+Produces Unsigned_32
+Implements
+    Give SM_Get(This.Unit, This.Sm)
+End Get
+
+Block Is_TX_Full Takes
+    This : State_Machine
+Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(Base(This.Unit) + 0x004) & (1 LSL (16 + This.Sm))) != 0
+End Is_TX_Full
+
+Block Is_RX_Empty Takes
+    This : State_Machine
+Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(Base(This.Unit) + 0x004) & (1 LSL (8 + This.Sm))) != 0
+End Is_RX_Empty
+

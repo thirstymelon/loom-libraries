@@ -1,0 +1,59 @@
+# Loom Bare-Metal Standard Math Module (RP2040)
+Module Math
+
+Block Abs_I32 Takes
+    X : Signed_32
+Produces Signed_32
+Implements
+    If X < 0
+        Give -X
+    End If
+    Give X
+End Abs_I32
+
+Block Min_I32 Takes
+    A : Signed_32
+    B : Signed_32
+Produces Signed_32
+Implements
+    If A < B
+        Give A
+    End If
+    Give B
+End Min_I32
+
+Block Max_I32 Takes
+    A : Signed_32
+    B : Signed_32
+Produces Signed_32
+Implements
+    If A > B
+        Give A
+    End If
+    Give B
+End Max_I32
+
+Block Clamp_I32 Takes
+    Val : Signed_32
+    Lo : Signed_32
+    Hi : Signed_32
+Produces Signed_32
+Implements
+    If Val < Lo
+        Give Lo
+    End If
+    If Val > Hi
+        Give Hi
+    End If
+    Give Val
+End Clamp_I32
+
+Block Abs_F32 Takes
+    X : Float_32
+Produces Float_32
+Implements
+    If X < 0.0
+        Give -X
+    End If
+    Give X
+End Abs_F32

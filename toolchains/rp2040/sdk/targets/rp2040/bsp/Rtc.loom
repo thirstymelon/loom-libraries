@@ -1,0 +1,52 @@
+# Loom RP2040 BSP — Real-Time Clock (RTC)
+Module Rtc
+Import RP2040
+
+Record Rtc_DateTime
+    Year  : Unsigned_16
+    Month : Unsigned_8
+    Day   : Unsigned_8
+    Dotw  : Unsigned_8
+    Hour  : Unsigned_8
+    Min   : Unsigned_8
+    Sec   : Unsigned_8
+End Rtc_DateTime
+
+Block Init
+Implements
+    RP2040.Reset_And_Wait(RP2040.RESET_RTC)
+    RP2040.Reg_Write(RP2040.CLOCKS_BASE + 0x6C, (1 LSL 11))
+    RP2040.Reg_Write(RP2040.RTC_BASE + 0x00, 46874)
+End Init
+
+Block Set_DateTime Takes
+    Dt : Rtc_DateTime
+Declares
+    Setup0 : Unsigned_32
+    Setup1 : Unsigned_32
+Implements
+    RP2040.Reg_Clear(RP2040.RTC_BASE + 0x0C, 1)
+    Setup0 = ((Dt.Year as Unsigned_32) LSL 12) | ((Dt.Month as Unsigned_32) LSL 8) | (Dt.Day as Unsigned_32)
+    Setup1 = ((Dt.Dotw as Unsigned_32) LSL 24) | ((Dt.Hour as Unsigned_32) LSL 16) | ((Dt.Min as Unsigned_32) LSL 8) | (Dt.Sec as Unsigned_32)
+    RP2040.Reg_Write(RP2040.RTC_BASE + 0x04, Setup0)
+    RP2040.Reg_Write(RP2040.RTC_BASE + 0x08, Setup1)
+    RP2040.Reg_Write(RP2040.RTC_BASE + 0x0C, 3)
+End Set_DateTime
+
+Block Get_DateTime Produces Rtc_DateTime
+Declares
+    Dt : Rtc_DateTime
+    R0 : Unsigned_32
+    R1 : Unsigned_32
+Implements
+    R0 = RP2040.Reg_Read(RP2040.RTC_BASE + 0x1C)
+    R1 = RP2040.Reg_Read(RP2040.RTC_BASE + 0x18)
+    Dt.Year  = ((R1 LSR 12) & 0xFFF) as Unsigned_16
+    Dt.Month = ((R1 LSR 8) & 0xF) as Unsigned_8
+    Dt.Day   = (R1 & 0x1F) as Unsigned_8
+    Dt.Dotw  = ((R0 LSR 24) & 0x7) as Unsigned_8
+    Dt.Hour  = ((R0 LSR 16) & 0x1F) as Unsigned_8
+    Dt.Min   = ((R0 LSR 8) & 0x3F) as Unsigned_8
+    Dt.Sec   = (R0 & 0x3F) as Unsigned_8
+    Give Dt
+End Get_DateTime

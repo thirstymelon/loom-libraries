@@ -1,0 +1,212 @@
+# Loom RP2040 Board Support Package — Core Hardware & MMIO Foundation
+Module RP2040
+
+Block Global
+    Declares
+        # APB & AHB Peripheral Base Addresses (RP2040 Datasheet §2.2)
+        SYSINFO_BASE      : Constant Unsigned_32 = 0x40000000
+        SYSCFG_BASE       : Constant Unsigned_32 = 0x40004000
+        CLOCKS_BASE       : Constant Unsigned_32 = 0x40008000
+        RESETS_BASE       : Constant Unsigned_32 = 0x4000C000
+        PSM_BASE          : Constant Unsigned_32 = 0x40010000
+        IO_BANK0_BASE     : Constant Unsigned_32 = 0x40014000
+        IO_QSPI_BASE      : Constant Unsigned_32 = 0x40018000
+        PADS_BANK0_BASE   : Constant Unsigned_32 = 0x4001C000
+        PADS_QSPI_BASE    : Constant Unsigned_32 = 0x40020000
+        XOSC_BASE         : Constant Unsigned_32 = 0x40024000
+        PLL_SYS_BASE      : Constant Unsigned_32 = 0x40028000
+        PLL_USB_BASE      : Constant Unsigned_32 = 0x4002C000
+        BUSCTRL_BASE      : Constant Unsigned_32 = 0x40030000
+        UART0_BASE        : Constant Unsigned_32 = 0x40034000
+        UART1_BASE        : Constant Unsigned_32 = 0x40038000
+        SPI0_BASE         : Constant Unsigned_32 = 0x4003C000
+        SPI1_BASE         : Constant Unsigned_32 = 0x40040000
+        I2C0_BASE         : Constant Unsigned_32 = 0x40044000
+        I2C1_BASE         : Constant Unsigned_32 = 0x40048000
+        ADC_BASE          : Constant Unsigned_32 = 0x4004C000
+        PWM_BASE          : Constant Unsigned_32 = 0x40050000
+        TIMER_BASE        : Constant Unsigned_32 = 0x40054000
+        WATCHDOG_BASE     : Constant Unsigned_32 = 0x40058000
+        RTC_BASE          : Constant Unsigned_32 = 0x4005C000
+        DMA_BASE          : Constant Unsigned_32 = 0x50000000
+        USBCTRL_DPRAM     : Constant Unsigned_32 = 0x50100000
+        USBCTRL_REGS      : Constant Unsigned_32 = 0x50110000
+        PIO0_BASE         : Constant Unsigned_32 = 0x50200000
+        PIO1_BASE         : Constant Unsigned_32 = 0x50300000
+        SIO_BASE          : Constant Unsigned_32 = 0xD0000000
+        PPB_BASE          : Constant Unsigned_32 = 0xE0000000
+
+        # Atomic Register Access Offsets (§2.1.2)
+        ATOMIC_XOR_OFFSET : Constant Unsigned_32 = 0x1000
+        ATOMIC_SET_OFFSET : Constant Unsigned_32 = 0x2000
+        ATOMIC_CLR_OFFSET : Constant Unsigned_32 = 0x3000
+
+        # Reset Bit Masks (RESETS_RESET)
+        RESET_ADC         : Constant Unsigned_32 = 1
+        RESET_BUSCTRL     : Constant Unsigned_32 = 2
+        RESET_DMA         : Constant Unsigned_32 = 4
+        RESET_I2C0        : Constant Unsigned_32 = 8
+        RESET_I2C1        : Constant Unsigned_32 = 16
+        RESET_IO_BANK0    : Constant Unsigned_32 = 32
+        RESET_IO_QSPI     : Constant Unsigned_32 = 64
+        RESET_JTAG        : Constant Unsigned_32 = 128
+        RESET_PADS_BANK0  : Constant Unsigned_32 = 256
+        RESET_PADS_QSPI   : Constant Unsigned_32 = 512
+        RESET_PIO0        : Constant Unsigned_32 = 1024
+        RESET_PIO1        : Constant Unsigned_32 = 2048
+        RESET_PLL_SYS     : Constant Unsigned_32 = 4096
+        RESET_PLL_USB     : Constant Unsigned_32 = 8192
+        RESET_PWM         : Constant Unsigned_32 = 16384
+        RESET_RTC         : Constant Unsigned_32 = 32768
+        RESET_SPI0        : Constant Unsigned_32 = 65536
+        RESET_SPI1        : Constant Unsigned_32 = 131072
+        RESET_SYSCFG      : Constant Unsigned_32 = 262144
+        RESET_SYSINFO     : Constant Unsigned_32 = 524288
+        RESET_TBMAN       : Constant Unsigned_32 = 1048576
+        RESET_TIMER       : Constant Unsigned_32 = 2097152
+        RESET_UART0       : Constant Unsigned_32 = 4194304
+        RESET_UART1       : Constant Unsigned_32 = 8388608
+        RESET_USBCTRL     : Constant Unsigned_32 = 16777216
+
+        PIN_RESERVED_MASK : Unsigned_32 = 0
+End Global
+
+Block Pin_Is_Reserved Takes
+    Pin : Unsigned_32
+Produces Boolean
+Declares
+    Reserved : Boolean = False
+Implements
+    If Pin > 29
+        Give True
+    End If
+    Unsafe
+        Reserved = ((PIN_RESERVED_MASK LSR Pin) & 1) != 0
+    End Unsafe
+    Give Reserved
+End Pin_Is_Reserved
+
+Block Pin_Reserve Takes
+    Pin : Unsigned_32
+Produces Boolean
+Declares
+    Mask : Unsigned_32
+    Ok : Boolean = False
+    Saved : Unsigned_32
+Implements
+    If Pin > 29
+        Give False
+    End If
+    Mask = 1 LSL Pin
+    Saved = __loom_irq_save()
+    Unsafe
+        If (PIN_RESERVED_MASK & Mask) == 0
+            PIN_RESERVED_MASK = PIN_RESERVED_MASK | Mask
+            Ok = True
+        End If
+    End Unsafe
+    __loom_irq_restore(Saved)
+    Give Ok
+End Pin_Reserve
+
+Block Pin_Release Takes
+    Pin : Unsigned_32
+Declares
+    Saved : Unsigned_32
+Implements
+    If Pin <= 29
+        Saved = __loom_irq_save()
+        Unsafe
+            PIN_RESERVED_MASK = PIN_RESERVED_MASK & ~(1 LSL Pin)
+        End Unsafe
+        __loom_irq_restore(Saved)
+    End If
+End Pin_Release
+
+Block Reg_Read Takes
+    Addr : Unsigned_32
+Produces Unsigned_32
+Declares
+    Val : Unsigned_32 = 0
+Implements
+    Unsafe
+        Val = Vol_Read_32(Addr)
+    End Unsafe
+    Give Val
+End Reg_Read
+
+Block Reg_Write Takes
+    Addr : Unsigned_32
+    Val : Unsigned_32
+Implements
+    Unsafe
+        Vol_Write_32(Addr, Val)
+    End Unsafe
+End Reg_Write
+
+Block Reg_Set Takes
+    Addr : Unsigned_32
+    Mask : Unsigned_32
+Implements
+    Unsafe
+        Vol_Write_32(Addr + ATOMIC_SET_OFFSET, Mask)
+    End Unsafe
+End Reg_Set
+
+Block Reg_Clear Takes
+    Addr : Unsigned_32
+    Mask : Unsigned_32
+Implements
+    Unsafe
+        Vol_Write_32(Addr + ATOMIC_CLR_OFFSET, Mask)
+    End Unsafe
+End Reg_Clear
+
+Block Reg_Xor Takes
+    Addr : Unsigned_32
+    Mask : Unsigned_32
+Implements
+    Unsafe
+        Vol_Write_32(Addr + ATOMIC_XOR_OFFSET, Mask)
+    End Unsafe
+End Reg_Xor
+
+Block Reg_Write_Masked Takes
+    Addr : Unsigned_32
+    Values : Unsigned_32
+    Write_Mask : Unsigned_32
+Declares
+    Cur : Unsigned_32
+Implements
+    Unsafe
+        Cur = Vol_Read_32(Addr)
+        Vol_Write_32(Addr + ATOMIC_XOR_OFFSET, (Cur ^ Values) & Write_Mask)
+    End Unsafe
+End Reg_Write_Masked
+
+Block Reset_Block Takes
+    Mask : Unsigned_32
+Implements
+    Reg_Set(RESETS_BASE, Mask)
+End Reset_Block
+
+Block Unreset_Wait Takes
+    Mask : Unsigned_32
+Declares
+    Done : Unsigned_32
+Implements
+    Reg_Clear(RESETS_BASE, Mask)
+    Loop
+        Done = Reg_Read(RESETS_BASE + 8)
+        If (Done & Mask) == Mask
+            Exit
+        End If
+    End Loop
+End Unreset_Wait
+
+Block Reset_And_Wait Takes
+    Mask : Unsigned_32
+Implements
+    Reset_Block(Mask)
+    Unreset_Wait(Mask)
+End Reset_And_Wait

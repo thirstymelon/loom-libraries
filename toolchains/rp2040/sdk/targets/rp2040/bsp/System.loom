@@ -1,0 +1,171 @@
+# Loom RP2040 BSP — Cortex-M0+ System Control, NVIC & SysTick
+Module System
+Import RP2040
+
+Block Global
+    Declares
+        NVIC_ISER_ADDR : Constant Unsigned_32 = 0xE000E100
+        NVIC_ICER_ADDR : Constant Unsigned_32 = 0xE000E180
+        NVIC_ISPR_ADDR : Constant Unsigned_32 = 0xE000E200
+        NVIC_ICPR_ADDR : Constant Unsigned_32 = 0xE000E280
+        NVIC_IPR0_ADDR : Constant Unsigned_32 = 0xE000E400
+        SYST_CSR_ADDR  : Constant Unsigned_32 = 0xE000E010
+        SYST_RVR_ADDR  : Constant Unsigned_32 = 0xE000E014
+        SYST_CVR_ADDR  : Constant Unsigned_32 = 0xE000E018
+        SCB_AIRCR_ADDR : Constant Unsigned_32 = 0xE000ED0C
+        SCB_SCR_ADDR   : Constant Unsigned_32 = 0xE000ED10
+        CPUID_ADDR     : Constant Unsigned_32 = 0xD0000000
+End Global
+
+Block Core_ID Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(CPUID_ADDR)
+End Core_ID
+
+Block Chip_ID Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(RP2040.SYSINFO_BASE)
+End Chip_ID
+
+Block IRQ_Enable Takes
+    Irq : Unsigned_32
+Implements
+    If Irq < 32
+        RP2040.Reg_Write(NVIC_ISER_ADDR, 1 LSL Irq)
+    End If
+End IRQ_Enable
+
+Block IRQ_Disable Takes
+    Irq : Unsigned_32
+Implements
+    If Irq < 32
+        RP2040.Reg_Write(NVIC_ICER_ADDR, 1 LSL Irq)
+    End If
+End IRQ_Disable
+
+Block IRQ_Clear_Pending Takes
+    Irq : Unsigned_32
+Implements
+    If Irq < 32
+        RP2040.Reg_Write(NVIC_ICPR_ADDR, 1 LSL Irq)
+    End If
+End IRQ_Clear_Pending
+
+Block SysTick_Init Takes
+    Reload_Val : Unsigned_32
+    Enable_IRQ : Boolean
+Declares
+    Csr : Unsigned_32 = 5
+Implements
+    RP2040.Reg_Write(SYST_CSR_ADDR, 0)
+    RP2040.Reg_Write(SYST_RVR_ADDR, Reload_Val & 0x00FFFFFF)
+    RP2040.Reg_Write(SYST_CVR_ADDR, 0)
+    If Enable_IRQ
+        Csr = Csr | 2
+    End If
+    RP2040.Reg_Write(SYST_CSR_ADDR, Csr)
+End SysTick_Init
+
+Block SysTick_Current Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(SYST_CVR_ADDR)
+End SysTick_Current
+
+Block NOP
+Implements
+    Nop()
+End NOP
+
+Block WFI
+Implements
+    WaitForInterrupt()
+End WFI
+
+Block WFE
+Implements
+    WaitForEvent()
+End WFE
+
+Block SEV
+Implements
+    SendEvent()
+End SEV
+
+Block DMB
+Implements
+    DataMemoryBarrier()
+End DMB
+
+Block DSB
+Implements
+    DataSyncBarrier()
+End DSB
+
+Block ISB
+Implements
+    InstructionSyncBarrier()
+End ISB
+
+Block Save_And_Disable_IRQ Produces Unsigned_32
+Implements
+    Give __loom_irq_save()
+End Save_And_Disable_IRQ
+
+Block Restore_IRQ Takes
+    Saved : Unsigned_32
+Implements
+    __loom_irq_restore(Saved)
+End Restore_IRQ
+
+Block Reboot_Normal
+Implements
+    RP2040.Reg_Write(SCB_AIRCR_ADDR, 0x05FA0004)
+    Loop
+        WaitForInterrupt()
+    End Loop
+End Reboot_Normal
+
+Extern Block reset_usb_boot
+End reset_usb_boot
+
+Block Reboot_Bootsel
+Implements
+    reset_usb_boot()
+    Loop
+        WaitForInterrupt()
+    End Loop
+End Reboot_Bootsel
+
+Block Set_Sleep_On_Exit Takes
+    Enable : Boolean
+Declares
+    Scr : Unsigned_32
+Implements
+    Scr = RP2040.Reg_Read(SCB_SCR_ADDR)
+    If Enable
+        Scr = Scr | (1 LSL 1)
+    Else
+        Scr = Scr & ~(1 LSL 1)
+    End If
+    RP2040.Reg_Write(SCB_SCR_ADDR, Scr)
+End Set_Sleep_On_Exit
+
+Block Get_Sleep_On_Exit Produces Boolean
+Implements
+    Give (RP2040.Reg_Read(SCB_SCR_ADDR) & (1 LSL 1)) != 0
+End Get_Sleep_On_Exit
+
+Block Set_Sleep_Deep Takes
+    Enable : Boolean
+Declares
+    Scr : Unsigned_32
+Implements
+    Scr = RP2040.Reg_Read(SCB_SCR_ADDR)
+    If Enable
+        Scr = Scr | (1 LSL 2)
+    Else
+        Scr = Scr & ~(1 LSL 2)
+    End If
+    RP2040.Reg_Write(SCB_SCR_ADDR, Scr)
+End Set_Sleep_Deep
+

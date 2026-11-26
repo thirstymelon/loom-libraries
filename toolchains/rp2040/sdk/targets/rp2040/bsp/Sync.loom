@@ -1,0 +1,173 @@
+Module Sync
+
+Tagged Record Mutex
+    Locked : Unsigned_32
+    Owner  : Unsigned_32
+    Prio   : Unsigned_32
+    Wait   : Unsigned_32
+End Mutex
+
+Extern Block loom_mutex_init Takes M : Mutex Pointer
+End loom_mutex_init
+
+Extern Block loom_mutex_lock Takes M : Mutex Pointer
+End loom_mutex_lock
+
+Extern Block loom_mutex_unlock Takes M : Mutex Pointer
+End loom_mutex_unlock
+
+Block Init Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_init(M)
+End Init
+
+Block Acquire Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_lock(M)
+End Acquire
+
+Block Unlock Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_unlock(M)
+End Unlock
+
+Block Mutex_Init Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_init(M)
+End Mutex_Init
+
+Block Mutex_Lock Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_lock(M)
+End Mutex_Lock
+
+Block Mutex_Unlock Takes
+    M : Mutex Pointer
+Implements
+    loom_mutex_unlock(M)
+End Mutex_Unlock
+
+Tagged Record Channel
+    Head     : Unsigned_32
+    Tail     : Unsigned_32
+    Count    : Unsigned_32
+    Capacity : Unsigned_32
+    Lock     : Unsigned_32
+    Buf0     : Unsigned_32
+    Buf1     : Unsigned_32
+    Buf2     : Unsigned_32
+    Buf3     : Unsigned_32
+    Buf4     : Unsigned_32
+    Buf5     : Unsigned_32
+    Buf6     : Unsigned_32
+    Buf7     : Unsigned_32
+    Buf8     : Unsigned_32
+    Buf9     : Unsigned_32
+    Buf10    : Unsigned_32
+    Buf11    : Unsigned_32
+    Buf12    : Unsigned_32
+    Buf13    : Unsigned_32
+    Buf14    : Unsigned_32
+    Buf15    : Unsigned_32
+End Channel
+
+Extern Block loom_channel_init Takes Ch : Channel Pointer, Cap : Unsigned_32
+End loom_channel_init
+
+Extern Block loom_channel_send Takes Ch : Channel Pointer, Val : Unsigned_32 Produces Boolean
+End loom_channel_send
+
+Extern Block loom_channel_try_send Takes Ch : Channel Pointer, Val : Unsigned_32 Produces Boolean
+End loom_channel_try_send
+
+Extern Block loom_channel_receive Takes Ch : Channel Pointer Produces Unsigned_32
+End loom_channel_receive
+
+Extern Block loom_channel_count Takes Ch : Channel Pointer Produces Unsigned_32
+End loom_channel_count
+
+Extern Block loom_channel_is_empty Takes Ch : Channel Pointer Produces Boolean
+End loom_channel_is_empty
+
+Extern Block loom_channel_is_full Takes Ch : Channel Pointer Produces Boolean
+End loom_channel_is_full
+
+Block Init Takes
+    Ch : Channel Pointer,
+    Cap : Unsigned_32
+Implements
+    loom_channel_init(Ch, Cap)
+End Init
+
+Block Send Takes
+    Ch : Channel Pointer,
+    Val : Unsigned_32
+Produces Boolean
+Implements
+    Give loom_channel_send(Ch, Val)
+End Send
+
+Block Try_Send Takes
+    Ch : Channel Pointer,
+    Val : Unsigned_32
+Produces Boolean
+Implements
+    Give loom_channel_try_send(Ch, Val)
+End Try_Send
+
+Block Receive Takes
+    Ch : Channel Pointer
+Produces Unsigned_32
+Implements
+    Give loom_channel_receive(Ch)
+End Receive
+
+Block Count Takes
+    Ch : Channel Pointer
+Produces Unsigned_32
+Implements
+    Give loom_channel_count(Ch)
+End Count
+
+Block Is_Empty Takes
+    Ch : Channel Pointer
+Produces Boolean
+Implements
+    Give loom_channel_is_empty(Ch)
+End Is_Empty
+
+Block Is_Full Takes
+    Ch : Channel Pointer
+Produces Boolean
+Implements
+    Give loom_channel_is_full(Ch)
+End Is_Full
+
+Block Spinlock_Claim Takes
+    Id : Unsigned_32
+Produces Boolean
+Declares
+    Addr : Unsigned_32
+Implements
+    If Id > 31
+        Give False
+    End If
+    Addr = 0xD0000100 + (Id * 4)
+    Give RP2040.Reg_Read(Addr) != 0
+End Spinlock_Claim
+
+Block Spinlock_Release Takes
+    Id : Unsigned_32
+Declares
+    Addr : Unsigned_32
+Implements
+    If Id <= 31
+        Addr = 0xD0000100 + (Id * 4)
+        RP2040.Reg_Write(Addr, 1)
+    End If
+End Spinlock_Release

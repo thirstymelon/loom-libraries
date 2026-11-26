@@ -1,0 +1,192 @@
+# Loom RP2040 BSP — PL022 SPI Master Driver (SPI0 / SPI1)
+Module Spi
+Import RP2040
+Import Clock
+Import Gpio
+
+Enum Spi_Port : Unsigned_32
+    SPI0
+    SPI1
+End Spi_Port
+
+Enum Spi_Mode : Unsigned_32
+    Mode_0
+    Mode_1
+    Mode_2
+    Mode_3
+End Spi_Mode
+
+Tagged Record Spi_Device
+    Port_Id : Spi_Port
+End Spi_Device
+
+Record Spi_Config
+    Port_Id   : Spi_Port
+    Rx_Pin    : Gpio.Pin
+    Csn_Pin   : Gpio.Pin
+    Sck_Pin   : Gpio.Pin
+    Tx_Pin    : Gpio.Pin
+    Baud_Hz   : Unsigned_32
+    Data_Bits : Unsigned_32
+    Spi_Mode  : Spi_Mode
+End Spi_Config
+
+Enum Spi_Error : Signed_32
+    Err_Invalid_ID = -1
+    Err_Invalid_Freq = -2
+End Spi_Error
+
+Block Base Takes
+    P : Spi_Port
+Produces Unsigned_32
+Implements
+    If P == Spi_Port.SPI0
+        Give RP2040.SPI0_BASE
+    End If
+    Give RP2040.SPI1_BASE
+End Base
+
+Block Init Takes
+    P         : Spi_Port
+    Rx        : Gpio.Pin
+    Csn       : Gpio.Pin
+    Sck       : Gpio.Pin
+    Tx        : Gpio.Pin
+    Baud_Hz   : Unsigned_32
+Produces Spi_Device or Spi_Error
+Implements
+    Give Init_Full(P, Rx, Csn, Sck, Tx, Baud_Hz, 8, Spi_Mode.Mode_0)
+End Init
+
+Block Init_Full Takes
+    P         : Spi_Port
+    Rx        : Gpio.Pin
+    Csn       : Gpio.Pin
+    Sck       : Gpio.Pin
+    Tx        : Gpio.Pin
+    Baud_Hz   : Unsigned_32
+    Data_Bits : Unsigned_32
+    Mode_Val  : Spi_Mode
+Produces Spi_Device or Spi_Error
+Declares
+    Spi_Addr : Unsigned_32
+    Peri_Hz  : Unsigned_32
+    Prescale : Unsigned_32 = 2
+    Postdiv  : Unsigned_32 = 0
+    Cr0      : Unsigned_32
+    Cpol     : Boolean
+    Cpha     : Boolean
+    Dev      : Spi_Device
+Implements
+    If Baud_Hz == 0
+        Give Spi_Error.Err_Invalid_Freq
+    End If
+
+    If P == Spi_Port.SPI0
+        RP2040.Reset_And_Wait(RP2040.RESET_SPI0)
+    Else
+        RP2040.Reset_And_Wait(RP2040.RESET_SPI1)
+    End If
+
+    # Configure pins for SPI
+    Gpio.Set_Function(Rx, Gpio.Function.SPI)
+    Gpio.Set_Function(Csn, Gpio.Function.SPI)
+    Gpio.Set_Function(Sck, Gpio.Function.SPI)
+    Gpio.Set_Function(Tx, Gpio.Function.SPI)
+
+    Spi_Addr = Base(P)
+    Peri_Hz = Clock.Get_Peri_Hz()
+
+    Loop while (Prescale <= 254)
+        If (Peri_Hz / (Prescale * 256)) <= Baud_Hz
+            Exit
+        End If
+        Prescale = Prescale + 2
+    End Loop
+    Postdiv = 256
+    Loop while (Postdiv > 1)
+        If (Peri_Hz / (Prescale * (Postdiv - 1))) > Baud_Hz
+            Exit
+        End If
+        Postdiv = Postdiv - 1
+    End Loop
+    Postdiv = Postdiv - 1
+
+    Cpol = (Mode_Val == Spi_Mode.Mode_2) Or (Mode_Val == Spi_Mode.Mode_3)
+    Cpha = (Mode_Val == Spi_Mode.Mode_1) Or (Mode_Val == Spi_Mode.Mode_3)
+
+    RP2040.Reg_Write(Spi_Addr + 0x04, 0)
+    RP2040.Reg_Write(Spi_Addr + 0x10, Prescale)
+    Cr0 = ((Data_Bits - 1) & 0xF) | ((Postdiv & 0xFF) LSL 8)
+    If Cpol
+        Cr0 = Cr0 | 0x40
+    End If
+    If Cpha
+        Cr0 = Cr0 | 0x80
+    End If
+    RP2040.Reg_Write(Spi_Addr + 0x00, Cr0)
+    RP2040.Reg_Write(Spi_Addr + 0x04, 0x02)
+
+    Dev.Port_Id = P
+    Give Dev
+End Init_Full
+
+Block Init_Advanced Takes
+    Cfg : Spi_Config
+Produces Spi_Device or Spi_Error
+Implements
+    Give Init_Full(Cfg.Port_Id, Cfg.Rx_Pin, Cfg.Csn_Pin, Cfg.Sck_Pin, Cfg.Tx_Pin, Cfg.Baud_Hz, Cfg.Data_Bits, Cfg.Spi_Mode)
+End Init_Advanced
+
+Block Transfer_Byte Takes
+    This    : Spi_Device
+    Tx_Byte : Unsigned_8
+Produces Unsigned_8
+Declares
+    Spi_Addr : Unsigned_32
+Implements
+    Spi_Addr = Base(This.Port_Id)
+    Loop
+        If (RP2040.Reg_Read(Spi_Addr + 0x0C) & 0x02) != 0
+            Exit
+        End If
+    End Loop
+    RP2040.Reg_Write(Spi_Addr + 0x08, Tx_Byte as Unsigned_32)
+    Loop
+        If (RP2040.Reg_Read(Spi_Addr + 0x0C) & 0x04) != 0
+            Exit
+        End If
+    End Loop
+    Give (RP2040.Reg_Read(Spi_Addr + 0x08) & 0xFF) as Unsigned_8
+End Transfer_Byte
+
+Block Write_Byte Takes
+    This    : Spi_Device
+    Tx_Byte : Unsigned_8
+Declares
+    _ : Unsigned_8
+Implements
+    _ = Transfer_Byte(This, Tx_Byte)
+End Write_Byte
+
+Block Read_Byte Takes
+    This : Spi_Device
+Produces Unsigned_8
+Implements
+    Give Transfer_Byte(This, 0)
+End Read_Byte
+
+Block Deinit Takes
+    This : Spi_Device
+Declares
+    Spi_Addr : Unsigned_32
+Implements
+    Spi_Addr = Base(This.Port_Id)
+    RP2040.Reg_Write(Spi_Addr + 0x04, 0)
+End Deinit
+
+Block Global
+    Declares
+        SPI_0 : Constant Spi_Device = Spi_Device { Port_Id : Spi_Port.SPI0 }
+        SPI_1 : Constant Spi_Device = Spi_Device { Port_Id : Spi_Port.SPI1 }
+End Global

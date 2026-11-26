@@ -1,0 +1,117 @@
+# Loom RP2040 BSP — 12-bit SAR ADC & Internal Temperature Sensor
+Module Adc
+Import RP2040
+Import Gpio
+
+Enum Input : Unsigned_32
+    Ch0
+    Ch1
+    Ch2
+    Ch3
+    Temp_Sensor
+End Input
+
+Enum Adc_Error : Signed_32
+    Err_Invalid_Channel = -1
+    Err_Pin_In_Use = -2
+End Adc_Error
+
+Tagged Record Adc_Channel
+    Num : Input
+End Adc_Channel
+
+Block Global
+    Declares
+        Ch0  : Constant Adc_Channel = Adc_Channel { Num : Input.Ch0 }
+        Ch1  : Constant Adc_Channel = Adc_Channel { Num : Input.Ch1 }
+        Ch2  : Constant Adc_Channel = Adc_Channel { Num : Input.Ch2 }
+        Ch3  : Constant Adc_Channel = Adc_Channel { Num : Input.Ch3 }
+        Temp : Constant Adc_Channel = Adc_Channel { Num : Input.Temp_Sensor }
+End Global
+
+Block Init
+Implements
+    RP2040.Reset_And_Wait(RP2040.RESET_ADC)
+    RP2040.Reg_Write(RP2040.ADC_BASE + 0x00, 1)
+    Loop
+        If (RP2040.Reg_Read(RP2040.ADC_BASE + 0x00) & 0x100) != 0
+            Exit
+        End If
+    End Loop
+End Init
+
+Block Init_Pin Takes
+    This : Gpio.Pin
+Produces Signed_32 or Adc_Error
+Declares
+    Pin_Num   : Unsigned_32
+    Pad_Addr  : Unsigned_32
+    Ctrl_Addr : Unsigned_32
+Implements
+    Pin_Num = This.Number
+    If Pin_Num < 26 Or Pin_Num > 29
+        Give Adc_Error.Err_Invalid_Channel
+    End If
+    If Not RP2040.Pin_Reserve(Pin_Num)
+        Give Adc_Error.Err_Pin_In_Use
+    End If
+    Ctrl_Addr = RP2040.IO_BANK0_BASE + 0x04 + (Pin_Num * 8)
+    RP2040.Reg_Write(Ctrl_Addr, 31)
+    Pad_Addr = RP2040.PADS_BANK0_BASE + 0x04 + (Pin_Num * 4)
+    RP2040.Reg_Write_Masked(Pad_Addr, 0x80, 0xCC)
+    Give 0
+End Init_Pin
+
+Block Init_Adc Takes
+    This : Gpio.Pin
+Produces Signed_32 or Adc_Error
+Implements
+    Give Init_Pin(This)
+End Init_Adc
+
+Block Read_Raw Takes
+    This : Adc_Channel
+Produces Unsigned_16
+Declares
+    Cs  : Unsigned_32
+    Chn : Unsigned_32
+Implements
+    Chn = This.Num as Unsigned_32
+    Cs = 1 | ((Chn & 0x07) LSL 12)
+    If This.Num == Input.Temp_Sensor
+        Cs = Cs | 2
+    End If
+    RP2040.Reg_Write(RP2040.ADC_BASE + 0x00, Cs)
+    Loop
+        If (RP2040.Reg_Read(RP2040.ADC_BASE + 0x00) & 0x100) != 0
+            Exit
+        End If
+    End Loop
+    RP2040.Reg_Set(RP2040.ADC_BASE + 0x00, 4)
+    Loop
+        If (RP2040.Reg_Read(RP2040.ADC_BASE + 0x00) & 0x100) != 0
+            Exit
+        End If
+    End Loop
+    Give (RP2040.Reg_Read(RP2040.ADC_BASE + 0x04) & 0xFFF) as Unsigned_16
+End Read_Raw
+
+Block Read_MV Takes
+    This : Adc_Channel
+Produces Unsigned_32
+Declares
+    Raw : Unsigned_16
+Implements
+    Raw = Read_Raw(This)
+    Give ((Raw as Unsigned_32) * 3300) / 4096
+End Read_MV
+
+Block Read_Temp_C Produces Float_32
+Declares
+    Raw     : Unsigned_16
+    Voltage : Float_32
+Implements
+    Raw = Read_Raw(Temp)
+    Voltage = ((Raw as Float_32) * 3.3) / 4096.0
+    Give 27.0 - ((Voltage - 0.706) / 0.001721)
+End Read_Temp_C

@@ -1,0 +1,84 @@
+# Loom RP2040 BSP — 64-bit Hardware Microsecond Timer & Sleep
+Module Time
+Import RP2040
+
+Block Global
+    Declares
+        TIMER_TIMEHW   : Constant Unsigned_32 = 0x40054000
+        TIMER_TIMELW   : Constant Unsigned_32 = 0x40054004
+        TIMER_TIMEHR   : Constant Unsigned_32 = 0x40054008
+        TIMER_TIMELR   : Constant Unsigned_32 = 0x4005400C
+        TIMER_ALARM0   : Constant Unsigned_32 = 0x40054010
+        TIMER_ARMED    : Constant Unsigned_32 = 0x40054020
+        TIMER_TIMERAWH : Constant Unsigned_32 = 0x40054024
+        TIMER_TIMERAWL : Constant Unsigned_32 = 0x40054028
+        TIMER_INTR     : Constant Unsigned_32 = 0x40054034
+        TIMER_INTE     : Constant Unsigned_32 = 0x40054038
+End Global
+
+Block Now_US Produces Unsigned_64
+Declares
+    Lo : Unsigned_32 = 0
+    Hi : Unsigned_32
+    Hi2 : Unsigned_32
+Implements
+    Hi = RP2040.Reg_Read(TIMER_TIMERAWH)
+    Loop
+        Lo = RP2040.Reg_Read(TIMER_TIMERAWL)
+        Hi2 = RP2040.Reg_Read(TIMER_TIMERAWH)
+        If Hi == Hi2
+            Exit
+        End If
+        Hi = Hi2
+    End Loop
+    Give ((Hi as Unsigned_64) LSL 32) | (Lo as Unsigned_64)
+End Now_US
+
+Block Now_US_32 Produces Unsigned_32
+Implements
+    Give RP2040.Reg_Read(TIMER_TIMERAWL)
+End Now_US_32
+
+Block Now_MS Produces Unsigned_64
+Implements
+    Give Now_US() / 1000
+End Now_MS
+
+Block Sleep_US Takes
+    Us : Unsigned_64
+Declares
+    Start_T : Unsigned_64
+Implements
+    Start_T = Now_US()
+    Loop
+        If (Now_US() - Start_T) >= Us
+            Exit
+        End If
+    End Loop
+End Sleep_US
+
+Block Sleep_MS Takes
+    Ms : Unsigned_32
+Implements
+    Sleep_US((Ms as Unsigned_64) * 1000)
+End Sleep_MS
+
+Block Alarm_Set Takes
+    Alarm_Idx : Unsigned_32
+    Target_Us_Low : Unsigned_32
+Implements
+    If Alarm_Idx < 4
+        RP2040.Reg_Write(TIMER_INTR, 1 LSL Alarm_Idx)
+        RP2040.Reg_Set(TIMER_INTE, 1 LSL Alarm_Idx)
+        RP2040.Reg_Write(TIMER_ALARM0 + (Alarm_Idx * 4), Target_Us_Low)
+    End If
+End Alarm_Set
+
+Block Alarm_Clear Takes
+    Alarm_Idx : Unsigned_32
+Implements
+    If Alarm_Idx < 4
+        RP2040.Reg_Write(TIMER_INTR, 1 LSL Alarm_Idx)
+        RP2040.Reg_Write(TIMER_ARMED, 1 LSL Alarm_Idx)
+    End If
+End Alarm_Clear

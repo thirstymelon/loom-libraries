@@ -32,7 +32,5 @@ Implements
     Hasher_Update(H, "The quick brown fox ")
     Hasher_Update(H, "jumps over the lazy dog")
     Streamed = Hasher_Final(Move H)
-    Print("Streamed SHA-256: ")
-    Print(Streamed)
-    Print("\n")
+    Print("Streamed SHA-256: <Streamed>")
 End Main
