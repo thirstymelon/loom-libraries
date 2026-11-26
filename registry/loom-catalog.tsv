@@ -1,5 +1,4 @@
 # Loom Package Registry Catalog
 Kind	Name	Version	URL	Hash(SHA256)
 library	Hash	1.0.0	https://github.com/thirstymelon/loom-libraries/releases/download/v1.0.0/hash-1.0.0.tar.gz	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-library	http-server	1.0.0	local	none
-toolchain	rp2040	1.5.0	local	none
+toolchain	rp2040	1.5.0	https://github.com/thirstymelon/loom-libraries/releases/download/v1.5.0/rp2040-1.5.0.tar.gz	80a83157ab0f275e46d680d24dc4574a75deeaaa0ba93414005401e4a39c60e7
